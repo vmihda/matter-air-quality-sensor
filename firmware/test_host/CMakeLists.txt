@@ -19,3 +19,5 @@ function(add_host_test name)
 endfunction()
 
 add_host_test(test_aq_engine ${AQ_CORE_DIR}/aq_engine.c)
+add_host_test(test_scd4x_proto ${AQ_CORE_DIR}/scd4x_proto.c)
+add_host_test(test_pms5003_proto ${AQ_CORE_DIR}/pms5003_proto.c)
