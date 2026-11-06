@@ -122,6 +122,23 @@ def test_button_is_reachable_from_above(zone: enc.Box, lid: cq.Workplane) -> Non
     assert solid_in(lid, above) < EMPTY
 
 
+@pytest.mark.parametrize("side", enc.LED_POSSIBLE_ZONES, ids=["left_of_usb", "right_of_usb"])
+def test_led_light_reaches_outside_wherever_it_sits_beside_the_usb(side: enc.Box, lid: cq.Workplane) -> None:
+    # The LED position is not published, so the whole band beside the USB connector must see out.
+    above = enc.Box(side.x0, side.x1, side.y0, side.y1, side.z1, enc.OUTER_Z)
+    assert solid_in(lid, above) < EMPTY
+
+
+@pytest.mark.parametrize("name", sorted(enc.XIAO_DETAILS))
+def test_board_detail_stays_inside_the_board_envelope(name: str) -> None:
+    detail = enc.XIAO_DETAILS[name]
+    usb = enc.COMPONENT_BOXES["xiao_usb"]
+    board = enc.XIAO_BOX
+    assert board.x0 <= detail.x0 and detail.x1 <= board.x1
+    assert board.y0 <= detail.y0 and detail.y1 <= usb.y1
+    assert board.z0 <= detail.z0 and detail.z1 <= board.z1
+
+
 def test_board_has_air_inlet_low_and_outlet_high(base: cq.Workplane, lid: cq.Workplane) -> None:
     inlet = enc.Box(enc.OUTER_X - enc.WALL, enc.OUTER_X, enc.BOARD_BAY_Y0, enc.INNER_Y1, 3, enc.XIAO_SHELF_Z)
     outlet = enc.Box(enc.XIAO_BOX.x0, enc.XIAO_BOX.x1, enc.XIAO_BOX.y0, enc.XIAO_BOX.y1, enc.BASE_Z, enc.OUTER_Z)
@@ -193,6 +210,7 @@ def test_mesh_data_covers_printed_parts_and_components() -> None:
 
     assert data["parts"].keys() == {"base", "lid"}
     assert data["components"].keys() == enc.COMPONENT_BOXES.keys()
+    assert data["board_details"].keys() == enc.XIAO_DETAILS.keys()
     for mesh in data["parts"].values():
         assert len(mesh["vertices"]) % 3 == 0
         assert len(mesh["triangles"]) % 3 == 0

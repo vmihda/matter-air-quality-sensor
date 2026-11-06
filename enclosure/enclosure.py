@@ -113,6 +113,41 @@ BOOT_ZONE = Box(
     XIAO_BOX.z0 + XIAO_PCB, XIAO_BOX.z0 + 3.0,
 )
 RESET_ZONE = Box(XIAO_BOX.x1 - 3.8, XIAO_BOX.x1 - 0.8, BOOT_ZONE.y0, BOOT_ZONE.y1, BOOT_ZONE.z0, BOOT_ZONE.z1)
+# The LED position is not published: it can be anywhere in these bands beside the USB connector.
+LED_BAND_DEPTH = 9.0
+LED_POSSIBLE_ZONES = (
+    Box(
+        XIAO_BOX.x0 + 0.8, USB_CENTER_X - USB_SHELL[0] / 2,
+        XIAO_BOX.y1 - LED_BAND_DEPTH, XIAO_BOX.y1 - 0.7,
+        XIAO_BOX.z0 + XIAO_PCB, XIAO_BOX.z0 + XIAO_PCB + 0.8,
+    ),
+    Box(
+        USB_CENTER_X + USB_SHELL[0] / 2, XIAO_BOX.x1 - 0.8,
+        XIAO_BOX.y1 - LED_BAND_DEPTH, XIAO_BOX.y1 - 0.7,
+        XIAO_BOX.z0 + XIAO_PCB, XIAO_BOX.z0 + XIAO_PCB + 0.8,
+    ),
+)
+# Drawing aid for the preview. Only the board outline is published; the rest is approximate.
+XIAO_DETAILS: dict[str, Box] = {
+    "pcb": Box(XIAO_BOX.x0, XIAO_BOX.x1, XIAO_BOX.y0, XIAO_BOX.y1, XIAO_BOX.z0, XIAO_BOX.z0 + XIAO_PCB),
+    "shield": Box(
+        XIAO_BOX.x0 + 2.0, XIAO_BOX.x1 - 2.0,
+        XIAO_BOX.y0 + 3.0, XIAO_BOX.y1 - 10.0,
+        XIAO_BOX.z0 + XIAO_PCB, XIAO_BOX.z0 + XIAO_PCB + 2.0,
+    ),
+    "usb": Box(
+        USB_CENTER_X - USB_SHELL[0] / 2, USB_CENTER_X + USB_SHELL[0] / 2,
+        XIAO_BOX.y1 - 7.3, XIAO_BOX.y1 + USB_SHELL[1],
+        USB_CENTER_Z - USB_SHELL[2] / 2, USB_CENTER_Z + USB_SHELL[2] / 2,
+    ),
+    "led": Box(
+        XIAO_BOX.x1 - 3.6, XIAO_BOX.x1 - 1.6,
+        XIAO_BOX.y1 - 7.0, XIAO_BOX.y1 - 5.0,
+        XIAO_BOX.z0 + XIAO_PCB, XIAO_BOX.z0 + XIAO_PCB + 0.8,
+    ),
+    "boot": BOOT_ZONE,
+    "reset": RESET_ZONE,
+}
 BOARD_INLET_SLOT_COUNT = 6
 BOARD_INLET_Z = (5.0, 15.0)
 
@@ -530,6 +565,9 @@ def mesh_data() -> dict[str, dict]:
         "parts": {"base": _mesh(build_base()), "lid": _mesh(build_lid())},
         "components": {
             name: [box.x0, box.x1, box.y0, box.y1, box.z0, box.z1] for name, box in COMPONENT_BOXES.items()
+        },
+        "board_details": {
+            name: [box.x0, box.x1, box.y0, box.y1, box.z0, box.z1] for name, box in XIAO_DETAILS.items()
         },
     }
 
