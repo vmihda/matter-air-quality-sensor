@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "author": "toggle-gate",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-xiao-esp32-c6", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "chip-scd41-sim", "id": "scd41", "top": -96, "left": 220, "attrs": {} },
+    { "type": "chip-pms5003-sim", "id": "pms5003", "top": 96, "left": 220, "attrs": {} },
+    { "type": "wokwi-led", "id": "ledVentilate", "top": -86, "left": -130, "attrs": { "color": "blue", "label": "Ventilate" } },
+    { "type": "wokwi-led", "id": "ledDust", "top": -86, "left": -80, "attrs": { "color": "yellow", "label": "Dust" } },
+    { "type": "wokwi-led", "id": "ledFault", "top": -86, "left": -30, "attrs": { "color": "red", "label": "Fault" } }
+  ],
+  "connections": [
+    [ "scd41:VCC", "esp:3V3", "red", [ "h0" ] ],
+    [ "scd41:GND", "esp:GND", "black", [ "h0" ] ],
+    [ "scd41:SDA", "esp:D4", "gold", [ "h0" ] ],
+    [ "scd41:SCL", "esp:D5", "green", [ "h0" ] ],
+    [ "pms5003:VCC", "esp:5V", "orange", [ "h0" ] ],
+    [ "pms5003:GND", "esp:GND", "black", [ "h0" ] ],
+    [ "pms5003:TX", "esp:D7", "blue", [ "h0" ] ],
+    [ "pms5003:RX", "esp:D6", "purple", [ "h0" ] ],
+    [ "ledVentilate:A", "esp:D0", "blue", [ "v0" ] ],
+    [ "ledVentilate:C", "esp:GND", "black", [ "v0" ] ],
+    [ "ledDust:A", "esp:D1", "gold", [ "v0" ] ],
+    [ "ledDust:C", "esp:GND", "black", [ "v0" ] ],
+    [ "ledFault:A", "esp:D2", "red", [ "v0" ] ],
+    [ "ledFault:C", "esp:GND", "black", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}

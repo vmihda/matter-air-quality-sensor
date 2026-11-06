@@ -1,0 +1,9 @@
+{
+  "name": "PMS5003 (simulated)",
+  "author": "toggle-gate",
+  "pins": ["VCC", "GND", "TX", "RX"],
+  "controls": [
+    { "id": "pm25", "label": "PM2.5, ug/m3", "type": "range", "min": 0, "max": 200, "step": 1 },
+    { "id": "failure", "label": "Failure: 0 = OK, 1 = no data", "type": "range", "min": 0, "max": 1, "step": 1 }
+  ]
+}
