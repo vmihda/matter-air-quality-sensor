@@ -127,6 +127,39 @@ def test_pms_gasket_tape_closes_the_gap_at_the_rib_and_has_a_seat() -> None:
     assert enc.PMS_DIVIDER_WIDTH >= 2.5
 
 
+def test_gasket_strip_fills_the_gap_between_the_ports() -> None:
+    x = (enc.PMS_SMALL_PORTS.x1 + enc.PMS_FAN_PORT.x0) / 2
+    gap = enc.Box(x - 0.2, x + 0.2, enc.PMS_FACE_Y - enc.GASKET_GAP, enc.PMS_FACE_Y, enc.PMS_BOX.z0 + 1.6, enc.PMS_BOX.z1 - 1)
+    strip = enc.ASSEMBLY_AIDS["tape_frame_divider"].solid()
+    assert overlap(strip, gap.solid()) == pytest.approx(gap.volume, rel=1e-3)
+
+
+@pytest.mark.parametrize("name", sorted(enc.ASSEMBLY_AIDS))
+def test_tape_or_sleeve_fits_without_pressing_on_plastic_or_parts(
+    name: str, base: cq.Workplane, lid: cq.Workplane, envelopes: dict[str, cq.Workplane]
+) -> None:
+    aid = enc.ASSEMBLY_AIDS[name]
+    assert solid_in(base, aid) < EMPTY
+    assert solid_in(lid, aid) < EMPTY
+    assert all(overlap(part, aid.solid()) < EMPTY for part in envelopes.values())
+
+
+@pytest.mark.parametrize(("net", "pin"), [("3V3", "3V3"), ("GND", "GND"), ("SDA", "D4"), ("SCL", "D5")])
+def test_splice_sleeve_sits_on_the_shared_pad_and_clears_other_wires(net: str, pin: str) -> None:
+    sleeve = enc.ASSEMBLY_AIDS[f"sleeve_{net.lower()}"]
+    pad_x, pad_y = enc.XIAO_PADS[pin]
+    assert (sleeve.x0 + sleeve.x1) / 2 == pytest.approx(pad_x)
+    assert (sleeve.y0 + sleeve.y1) / 2 == pytest.approx(pad_y)
+    hits = [
+        wire.name
+        for wire in enc.WIRES
+        if wire.net != net
+        and overlap(reduce(lambda joined, part: joined.union(part), (b.solid() for b in enc.wire_segments(wire))), sleeve.solid())
+        >= EMPTY
+    ]
+    assert hits == []
+
+
 def test_usb_opening_clears_the_plug(base: cq.Workplane) -> None:
     # Metal of a USB-C plug is 8.4 x 2.6 mm; positions are estimates, so 1 mm of slack on each side.
     x, z = enc.USB_CENTER_X, enc.USB_CENTER_Z
@@ -383,6 +416,7 @@ def test_mesh_data_covers_printed_parts_and_components() -> None:
     assert data["board_details"].keys() == enc.XIAO_DETAILS.keys()
     assert [wire["name"] for wire in data["wires"]] == [wire.name for wire in enc.WIRES]
     assert data["connectors"].keys() == enc.WIRE_CONNECTORS.keys()
+    assert data["assembly_aids"].keys() == enc.ASSEMBLY_AIDS.keys()
     for mesh in data["parts"].values():
         assert len(mesh["vertices"]) % 3 == 0
         assert len(mesh["triangles"]) % 3 == 0

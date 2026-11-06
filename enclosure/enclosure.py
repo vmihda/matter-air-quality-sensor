@@ -89,6 +89,17 @@ PMS_DIVIDER_X = (PMS_SMALL_PORTS.x1 + PMS_FAN_PORT.x0) / 2
 # Bay walls
 PMS_WALL_X0 = PMS_BOX.x1 + CLEARANCE
 PARTITION_X = PMS_WALL_X0 + PARTITION_THICKNESS
+# Frame around the air face as (x0, x1, z0, z1): left, right, between the ports, bottom, top.
+PMS_FRAME_RIBS = {
+    "left": (INNER_X0, PMS_BOX.x0 + PMS_FRAME_RIB, PMS_FRAME_Z0, PMS_FRAME_Z1),
+    "right": (PMS_BOX.x1 - PMS_FRAME_RIB, PMS_WALL_X0, PMS_FRAME_Z0, PMS_FRAME_Z1),
+    "divider": (PMS_DIVIDER_X - PMS_DIVIDER_WIDTH / 2, PMS_DIVIDER_X + PMS_DIVIDER_WIDTH / 2, PMS_FRAME_Z0, PMS_FRAME_Z1),
+    "bottom": (INNER_X0, PMS_WALL_X0, PMS_FRAME_Z0, PMS_FRAME_Z0 + PMS_FRAME_RIB),
+    "top": (INNER_X0, PMS_WALL_X0, PMS_FRAME_Z1 - PMS_FRAME_RIB, PMS_FRAME_Z1),
+}
+# Lid pads that hold the PMS5003 through foam tape, as x spans over its top face.
+PMS_LID_PADS = ((PMS_BOX.x0 + 5.5, PMS_BOX.x0 + 8.5), (PMS_BOX.x1 - 8.5, PMS_BOX.x1 - 5.5))
+PMS_LID_PAD_Y = (PMS_BOX.y0 + 2.5, PMS_BOX.y1 - 3.5)
 PARTITION_Y0 = 24.5
 PARTITION_Y1 = PARTITION_Y0 + PARTITION_THICKNESS
 BOARD_BAY_Y0 = PARTITION_Y1
@@ -170,6 +181,7 @@ ADAPTER_FENCE_Z = FLOOR + 1.5
 WIRE_RADIUS = 0.6
 WIRE_CONNECTOR_SIZE = (10.0, 4.5)
 WIRE_CONNECTOR_MATED = 12.0
+SPLICE_SLEEVE_WIDTH = 2.5
 # Above the adapter so wires run straight on, and below the board, whose heat rises away from it.
 WIRE_PASSAGE = Box(
     PARTITION_X + 3.8, PARTITION_X + 15.8,
@@ -422,7 +434,7 @@ WIRES: tuple[Wire, ...] = (
     _pms_wire("pms_5v", "5V", 72.0, ADAPTER_BOX.y1 - 0.5, "5V"),
     _pms_wire("pms_gnd", "GND", 70.5, ADAPTER_BOX.y1 - 3.0, "GND"),
     _pms_wire("pms_tx", "PMS_TX", 72.0, ADAPTER_BOX.y0 + 2.5, "D7"),
-    _pms_wire("pms_rx", "PMS_RX", 57.8, ADAPTER_BOX.y0 + 2.5, "D6"),
+    _pms_wire("pms_rx", "PMS_RX", 57.8, ADAPTER_BOX.y0 + 1.4, "D6"),
     Wire(
         "pms_cable",
         _NET_COLORS["PMS_CABLE"],
@@ -450,6 +462,35 @@ WIRE_CONNECTORS: dict[str, Box] = {
         SENSOR_WIRE_ROOM.y0 + 1.0, SENSOR_WIRE_ROOM.y0 + 1.0 + WIRE_CONNECTOR_MATED,
         WIRE_PASSAGE.z0 + 0.4, WIRE_PASSAGE.z0 + 0.4 + _CONNECTOR_THICKNESS,
     ),
+}
+
+
+def _splice_sleeve(pin: str) -> Box:
+    """Heat shrink over a joint under the board, on the wire that rises to the shared pad."""
+    pad_x, pad_y = XIAO_PADS[pin]
+    half = SPLICE_SLEEVE_WIDTH / 2
+    return Box(pad_x - half, pad_x + half, pad_y - half, pad_y + half, XIAO_SHELF_Z - 6.5, XIAO_SHELF_Z - 0.5)
+
+
+# Foam tape and heat shrink, shown compressed and in place.
+ASSEMBLY_AIDS: dict[str, Box] = {
+    **{
+        f"tape_frame_{name}": Box(x0, x1, PMS_FACE_Y - GASKET_GAP, PMS_FACE_Y, z0, z1)
+        for name, (x0, x1, z0, z1) in PMS_FRAME_RIBS.items()
+    },
+    **{
+        f"tape_lid_{side}": Box(x0, x1, *PMS_LID_PAD_Y, PMS_BOX.z1, PMS_BOX.z1 + CLEARANCE)
+        for side, (x0, x1) in zip(("left", "right"), PMS_LID_PADS)
+    },
+    "foam_passage": Box(
+        WIRE_PASSAGE.x0, WIRE_PASSAGE.x1,
+        PARTITION_Y0 - 0.8, PARTITION_Y0,
+        WIRE_PASSAGE.z0, WIRE_PASSAGE.z1,
+    ),
+    "sleeve_3v3": _splice_sleeve("3V3"),
+    "sleeve_gnd": _splice_sleeve("GND"),
+    "sleeve_sda": _splice_sleeve("D4"),
+    "sleeve_scl": _splice_sleeve("D5"),
 }
 
 
@@ -490,11 +531,7 @@ def _pms_frame_and_seats() -> list[Box]:
     stop_z1 = FLOOR + 12.0
     return [
         # Frame that seals the air face to the front wall, with a rib between the ports
-        Box(INNER_X0, pms.x0 + PMS_FRAME_RIB, y0, y1, PMS_FRAME_Z0, PMS_FRAME_Z1),
-        Box(pms.x1 - PMS_FRAME_RIB, PMS_WALL_X0, y0, y1, PMS_FRAME_Z0, PMS_FRAME_Z1),
-        Box(PMS_DIVIDER_X - PMS_DIVIDER_WIDTH / 2, PMS_DIVIDER_X + PMS_DIVIDER_WIDTH / 2, y0, y1, PMS_FRAME_Z0, PMS_FRAME_Z1),
-        Box(INNER_X0, PMS_WALL_X0, y0, y1, PMS_FRAME_Z0, PMS_FRAME_Z0 + PMS_FRAME_RIB),
-        Box(INNER_X0, PMS_WALL_X0, y0, y1, PMS_FRAME_Z1 - PMS_FRAME_RIB, PMS_FRAME_Z1),
+        *[Box(x0, x1, y0, y1, z0, z1) for x0, x1, z0, z1 in PMS_FRAME_RIBS.values()],
         # Floor pads
         Box(pms.x0 + 3.5, pms.x0 + 6.5, pms.y0 + 1.5, pms.y1 - 1.5, FLOOR, pms.z0),
         Box(pms.x1 - 6.5, pms.x1 - 3.5, pms.y0 + 1.5, pms.y1 - 1.5, FLOOR, pms.z0),
@@ -639,8 +676,7 @@ def _lid_structure() -> list[Box]:
     tongue = RAIL
     return [
         # Pads that hold the PMS5003 through foam tape
-        Box(pms.x0 + 5.5, pms.x0 + 8.5, pms.y0 + 2.5, pms.y1 - 3.5, pad_z0, top),
-        Box(pms.x1 - 8.5, pms.x1 - 5.5, pms.y0 + 2.5, pms.y1 - 3.5, pad_z0, top),
+        *[Box(x0, x1, *PMS_LID_PAD_Y, pad_z0, top) for x0, x1 in PMS_LID_PADS],
         # Fingers that keep the board on its shelves: on the USB shell and on the far end
         Box(*finger_x, board.y1 - 9.2, board.y1 - 0.7, finger_z0, top),
         Box(*finger_x, board.y0 + 1.8, board.y0 + 5.8, finger_z0, top),
@@ -782,6 +818,9 @@ def mesh_data() -> dict[str, dict]:
         },
         "connectors": {
             name: [box.x0, box.x1, box.y0, box.y1, box.z0, box.z1] for name, box in WIRE_CONNECTORS.items()
+        },
+        "assembly_aids": {
+            name: [box.x0, box.x1, box.y0, box.y1, box.z0, box.z1] for name, box in ASSEMBLY_AIDS.items()
         },
         "wires": [
             {"name": wire.name, "color": wire.color, "radius": wire.radius, "points": wire.points} for wire in WIRES
