@@ -42,7 +42,11 @@ INNER_Y0, INNER_Y1 = WALL, OUTER_Y - WALL
 # Fit and print settings
 CLEARANCE = 0.5
 GASKET_GAP = 0.5
+# Mandatory foam strip on the frame: it closes the gap, including the one between the two ports.
+GASKET_TAPE = 1.0
 LID_FIT = 0.25
+# Larger at the front wall: parts of the lid below the hooks swing towards it while the lid closes.
+LID_FRONT_GAP = 0.4
 PARTITION_TOP_GAP = 0.3
 PARTITION_THICKNESS = 1.2
 RAIL = 1.0
@@ -63,7 +67,7 @@ PMS_BOX = Box(
     PMS_FACE_Y, PMS_FACE_Y + PMS_SIZE[1],
     PMS_Z0, PMS_Z0 + PMS_SIZE[2],
 )
-PMS_FRAME_Z0 = PMS_BOX.z0 + 0.6
+PMS_FRAME_Z0 = PMS_BOX.z0 + 0.1
 PMS_FRAME_Z1 = PMS_BOX.z1
 PMS_SLOT_Z0 = PMS_FRAME_Z0 + PMS_FRAME_RIB + 0.4
 PMS_SLOT_Z1 = PMS_FRAME_Z1 - PMS_FRAME_RIB
@@ -73,12 +77,13 @@ PMS_FAN_SLOT_X = PMS_X0 + 27.5
 PMS_FAN_SLOT_COUNT = 6
 PMS_PLUG_DEPTH = 6.0
 
-# The ports are the parts of the air face that must stay open, read from the drawing.
-PMS_SMALL_PORTS = Box(PMS_X0 + 4.9, PMS_X0 + 18.9, INNER_Y0, PMS_FACE_Y, PMS_BOX.z1 - 3.45, PMS_BOX.z1 - 1.45)
+# The ports are the parts of the air face that must stay open, from the datasheet drawing.
+PMS_SMALL_PORTS = Box(PMS_X0 + 5.0, PMS_X0 + 19.0, INNER_Y0, PMS_FACE_Y, PMS_BOX.z1 - 3.45, PMS_BOX.z1 - 1.45)
 PMS_SMALL_PORTS_AREA = 4 * 3.14159 * 1.0**2
-# The top of the fan ring is above the frame rib; that part draws through the 0.5 mm gasket gap.
-PMS_FAN_PORT = Box(PMS_X0 + 26.8, PMS_X0 + 44.8, INNER_Y0, PMS_FACE_Y, PMS_BOX.z1 - 17.5, PMS_SLOT_Z1)
+_PMS_FAN_CENTER_Z = PMS_BOX.z1 - PMS_SIZE[2] / 2
+PMS_FAN_PORT = Box(PMS_X0 + 26.8, PMS_X0 + 44.8, INNER_Y0, PMS_FACE_Y, _PMS_FAN_CENTER_Z - 9.0, _PMS_FAN_CENTER_Z + 9.0)
 PMS_FAN_PORT_AREA = 3.14159 * (9.0**2 - 6.0**2)
+PMS_DIVIDER_WIDTH = 3.0
 PMS_DIVIDER_X = (PMS_SMALL_PORTS.x1 + PMS_FAN_PORT.x0) / 2
 
 # Bay walls
@@ -227,6 +232,18 @@ SNAP_WINDOWS = (
 HOOK_SPANS = ((10.0, 20.0), (34.0, 44.0))
 LID_TONGUE_Z0 = 25.8
 HOOK_Z = (26.0, 26.8)
+# The lid closes by turning about its front hooks, rear edge coming down.
+HOOK_PIVOT = ((INNER_Y0 - 0.4 + INNER_Y0 + LID_FRONT_GAP) / 2, sum(HOOK_Z) / 2)
+# Tapered underside of the front edge, so it does not dig into the wall while the lid turns.
+LID_FRONT_RELIEF = (2.6, 0.65)
+SNAP_THICKNESS = 1.0
+SNAP_BUMP = 0.75
+SNAP_LEAD_IN = 0.7
+SNAP_OUTER_Y = INNER_Y1 - LID_FIT
+SNAP_BOTTOM_Z = SNAP_WINDOW_Z[0] - 0.8
+SNAP_LENGTH = BASE_Z - SNAP_BOTTOM_Z
+SNAP_TIP = (SNAP_OUTER_Y - SNAP_LEAD_IN, SNAP_BOTTOM_Z)
+SNAP_BUMP_TIP = (SNAP_OUTER_Y + SNAP_BUMP, SNAP_WINDOW_Z[0] + 1.0)
 LEFT_TONGUE_Y = (15.0, 35.0)
 RIGHT_TONGUE_Y = (30.0, 45.0)
 LID_BAR = 3.0
@@ -309,6 +326,7 @@ Point = tuple[float, float, float]
 class Wire:
     name: str
     color: str
+    net: str
     points: tuple[Point, ...]
     radius: float = WIRE_RADIUS
 
@@ -363,38 +381,53 @@ def _run_to_pad(x: float, z: float, pin: str) -> tuple[Point, ...]:
     return ((x, pad_y, z), (pad_x, pad_y, z), (pad_x, pad_y, _PAD_Z))
 
 
-def _scd41_wire(name: str, color: str, y_offset: float, x: float, z: float, pin: str) -> Wire:
+_NET_COLORS = {
+    "3V3": "#d93025",
+    "5V": "#f57c00",
+    "GND": "#202124",
+    "SDA": "#f0b400",
+    "SCL": "#188038",
+    "PMS_TX": "#1a73e8",
+    "PMS_RX": "#8e24aa",
+    "PMS_CABLE": "#6b7a75",
+}
+
+
+def _scd41_wire(name: str, net: str, y_offset: float, x: float, z: float, pin: str) -> Wire:
     start_x = SCD41_PCB.x0 - SCD41_REAR_DEPTH
     y = SCD41_CENTER_Y + y_offset
     top = SCD41_PCB.z1 - 1.6
-    return Wire(name, color, ((start_x, y, top), (x, y, top), (x, y, z), *_run_to_pad(x, z, pin)))
+    return Wire(name, _NET_COLORS[net], net, ((start_x, y, top), (x, y, top), (x, y, z), *_run_to_pad(x, z, pin)))
 
 
-def _ens160_wire(name: str, color: str, x: float, z: float, pin: str) -> Wire:
-    return Wire(name, color, ((x, ENS160_PCB.y1 + ENS160_REAR_DEPTH, z), *_run_to_pad(x, z, pin)))
+def _ens160_wire(name: str, net: str, x: float, z: float, pin: str) -> Wire:
+    start = (x, ENS160_PCB.y1 + ENS160_REAR_DEPTH, z)
+    return Wire(name, _NET_COLORS[net], net, (start, *_run_to_pad(x, z, pin)))
 
 
-def _pms_wire(name: str, color: str, x: float, y: float, pin: str) -> Wire:
-    return Wire(name, color, ((x, y, ADAPTER_BOX.z1), (x, y, _UNDER_BOARD_Z), *_run_to_pad(x, _UNDER_BOARD_Z, pin)))
+def _pms_wire(name: str, net: str, x: float, y: float, pin: str) -> Wire:
+    points = ((x, y, ADAPTER_BOX.z1), (x, y, _UNDER_BOARD_Z), *_run_to_pad(x, _UNDER_BOARD_Z, pin))
+    return Wire(name, _NET_COLORS[net], net, points)
 
 
 # The harness. Exact wire order on each module is set by the real part; the room for it is what is checked here.
 WIRES: tuple[Wire, ...] = (
-    _scd41_wire("scd41_vcc", "#d93025", -2.25, 68.3, _PASSAGE_Z[0], "3V3"),
-    _scd41_wire("scd41_gnd", "#202124", -0.75, 67.0, _PASSAGE_Z[1], "GND"),
-    _scd41_wire("scd41_sda", "#f0b400", 0.75, 65.7, _PASSAGE_Z[2], "D4"),
-    _scd41_wire("scd41_scl", "#188038", 2.25, 64.4, _PASSAGE_Z[3], "D5"),
-    _ens160_wire("ens160_vin", "#d93025", 62.9, _PASSAGE_Z[0], "3V3"),
-    _ens160_wire("ens160_gnd", "#202124", 61.6, _PASSAGE_Z[1], "GND"),
-    _ens160_wire("ens160_sda", "#f0b400", 60.3, _PASSAGE_Z[2], "D4"),
-    _ens160_wire("ens160_scl", "#188038", 59.0, _PASSAGE_Z[3], "D5"),
-    _pms_wire("pms_5v", "#f57c00", 72.0, ADAPTER_BOX.y1 - 1.0, "5V"),
-    _pms_wire("pms_gnd", "#202124", 70.5, ADAPTER_BOX.y1 - 1.0, "GND"),
-    _pms_wire("pms_tx", "#1a73e8", 72.0, ADAPTER_BOX.y0 + 2.5, "D7"),
-    _pms_wire("pms_rx", "#8e24aa", 61.0, ADAPTER_BOX.y0 + 2.5, "D6"),
+    _scd41_wire("scd41_vcc", "3V3", -2.25, 68.3, _PASSAGE_Z[0], "3V3"),
+    _scd41_wire("scd41_gnd", "GND", -0.75, 67.0, _PASSAGE_Z[1], "GND"),
+    _scd41_wire("scd41_sda", "SDA", 0.75, 65.7, _PASSAGE_Z[2], "D4"),
+    _scd41_wire("scd41_scl", "SCL", 2.25, 64.4, _PASSAGE_Z[3], "D5"),
+    _ens160_wire("ens160_vin", "3V3", 62.9, _PASSAGE_Z[0], "3V3"),
+    _ens160_wire("ens160_gnd", "GND", 61.6, _PASSAGE_Z[1], "GND"),
+    _ens160_wire("ens160_sda", "SDA", 60.3, _PASSAGE_Z[2], "D4"),
+    _ens160_wire("ens160_scl", "SCL", 59.0, _PASSAGE_Z[3], "D5"),
+    _pms_wire("pms_5v", "5V", 72.0, ADAPTER_BOX.y1 - 0.5, "5V"),
+    _pms_wire("pms_gnd", "GND", 70.5, ADAPTER_BOX.y1 - 3.0, "GND"),
+    _pms_wire("pms_tx", "PMS_TX", 72.0, ADAPTER_BOX.y0 + 2.5, "D7"),
+    _pms_wire("pms_rx", "PMS_RX", 57.8, ADAPTER_BOX.y0 + 2.5, "D6"),
     Wire(
         "pms_cable",
-        "#6b7a75",
+        _NET_COLORS["PMS_CABLE"],
+        "PMS_CABLE",
         (
             (PMS_PLUG.x1, 45.0, PMS_PLUG.z0 + 3.5),
             (ADAPTER_PLUG_BOX.x0 - 2.6, 45.0, PMS_PLUG.z0 + 3.5),
@@ -404,6 +437,21 @@ WIRES: tuple[Wire, ...] = (
         radius=1.5,
     ),
 )
+
+_CONNECTOR_WIDTH, _CONNECTOR_THICKNESS = WIRE_CONNECTOR_SIZE
+# Mated connectors in the sensor room, so a sensor unplugs with the lid off.
+WIRE_CONNECTORS: dict[str, Box] = {
+    "scd41": Box(
+        SENSOR_WIRE_ROOM.x1 - 0.1 - _CONNECTOR_THICKNESS, SENSOR_WIRE_ROOM.x1 - 0.1,
+        SCD41_CENTER_Y - _CONNECTOR_WIDTH / 2, SCD41_CENTER_Y + _CONNECTOR_WIDTH / 2,
+        14.0, 14.0 + WIRE_CONNECTOR_MATED,
+    ),
+    "ens160": Box(
+        SENSOR_WIRE_ROOM.x0 + 0.2, SENSOR_WIRE_ROOM.x0 + 0.2 + _CONNECTOR_WIDTH,
+        SENSOR_WIRE_ROOM.y0 + 1.0, SENSOR_WIRE_ROOM.y0 + 1.0 + WIRE_CONNECTOR_MATED,
+        WIRE_PASSAGE.z0 + 0.4, WIRE_PASSAGE.z0 + 0.4 + _CONNECTOR_THICKNESS,
+    ),
+}
 
 
 def _spread(center: float, count: int) -> list[float]:
@@ -445,7 +493,7 @@ def _pms_frame_and_seats() -> list[Box]:
         # Frame that seals the air face to the front wall, with a rib between the ports
         Box(INNER_X0, pms.x0 + PMS_FRAME_RIB, y0, y1, PMS_FRAME_Z0, PMS_FRAME_Z1),
         Box(pms.x1 - PMS_FRAME_RIB, PMS_WALL_X0, y0, y1, PMS_FRAME_Z0, PMS_FRAME_Z1),
-        Box(PMS_DIVIDER_X - 0.6, PMS_DIVIDER_X + 0.6, y0, y1, PMS_FRAME_Z0, PMS_FRAME_Z1),
+        Box(PMS_DIVIDER_X - PMS_DIVIDER_WIDTH / 2, PMS_DIVIDER_X + PMS_DIVIDER_WIDTH / 2, y0, y1, PMS_FRAME_Z0, PMS_FRAME_Z1),
         Box(INNER_X0, PMS_WALL_X0, y0, y1, PMS_FRAME_Z0, PMS_FRAME_Z0 + PMS_FRAME_RIB),
         Box(INNER_X0, PMS_WALL_X0, y0, y1, PMS_FRAME_Z1 - PMS_FRAME_RIB, PMS_FRAME_Z1),
         # Floor pads
@@ -599,7 +647,7 @@ def _lid_structure() -> list[Box]:
         Box(*finger_x, board.y0 + 1.8, board.y0 + 5.8, finger_z0, top),
         # Retainers above the sensor modules
         Box(scd.x0 - 0.3, scd.x1 + 0.1, scd.y0 + 1.4, scd.y1 - 2.0, scd.z1 + CLEARANCE, top),
-        Box(ens.x0 + 1.1, ens.x1 - 1.1, INNER_Y0 + LID_FIT, ens.y0 - CLEARANCE, ENS160_RETAINER_Z0, top),
+        Box(ens.x0 + 1.1, ens.x1 - 1.1, INNER_Y0 + LID_FRONT_GAP, ens.y0 - CLEARANCE, ENS160_RETAINER_Z0, top),
         Box(ens.x0 + 1.1, ens.x1 - 1.1, ens.y1 + CLEARANCE, ens.y1 + CLEARANCE + RAIL, ENS160_RETAINER_Z0, top),
         # Location tongues along the side walls
         Box(INNER_X0 + LID_FIT, INNER_X0 + LID_FIT + tongue, *LEFT_TONGUE_Y, LID_TONGUE_Z0, top),
@@ -609,18 +657,41 @@ def _lid_structure() -> list[Box]:
 
 def _lid_catches() -> list[cq.Workplane]:
     top = BASE_Z
-    front_y = INNER_Y0 + LID_FIT
-    back_y = INNER_Y1 - LID_FIT
+    front_y = INNER_Y0 + LID_FRONT_GAP
     catches: list[cq.Workplane] = []
     for x0, x1 in HOOK_SPANS:
         catches.append(Box(x0, x1, front_y, front_y + RAIL, LID_TONGUE_Z0, top).solid())
         catches.append(Box(x0, x1, INNER_Y0 - 0.4, front_y, *HOOK_Z).solid())
     for window in SNAP_WINDOWS:
         x0, x1 = window.x0 + 0.5, window.x1 - 0.5
-        z = window.z0 + 0.2
-        catches.append(Box(x0, x1, back_y - 1.2, back_y, window.z0 - 0.8, top).solid())
+        ramp_z = window.z0 + 0.2
+        # Chamfered tip so the tab rides into the base while the lid is still tilted.
+        catches.append(
+            _wedge(
+                x0,
+                x1,
+                [
+                    (SNAP_OUTER_Y - SNAP_THICKNESS, top),
+                    (SNAP_OUTER_Y, top),
+                    (SNAP_OUTER_Y, SNAP_BOTTOM_Z + SNAP_LEAD_IN),
+                    SNAP_TIP,
+                    (SNAP_OUTER_Y - SNAP_THICKNESS, SNAP_BOTTOM_Z),
+                ],
+            )
+        )
         # The ramp faces down so the snap deflects as the lid closes.
-        catches.append(_wedge(x0, x1, [(back_y, z), (back_y + 0.75, z + 0.8), (back_y + 0.75, z + 1.0), (back_y, z + 1.0)]))
+        catches.append(
+            _wedge(
+                x0,
+                x1,
+                [
+                    (SNAP_OUTER_Y, ramp_z),
+                    SNAP_BUMP_TIP,
+                    (SNAP_OUTER_Y + SNAP_BUMP, ramp_z + 1.0),
+                    (SNAP_OUTER_Y, ramp_z + 1.0),
+                ],
+            )
+        )
     return catches
 
 
@@ -634,7 +705,19 @@ def _lid_openings() -> list[cq.Workplane]:
     ]
     half = SLOT_WIDTH / 2
     slots = [Box(XIAO_BOX.x0 + 1.5, XIAO_BOX.x1 - 1.5, y - half, y + half, z0, z1) for y in LID_EXIT_SLOTS_Y]
-    return [pane.solid().edges("|Z").fillet(1.0) for pane in panes] + [_slot(slot, "z") for slot in slots]
+    relief_y, relief_z = LID_FRONT_RELIEF
+    relief = _wedge(
+        -1.0,
+        OUTER_X + 1.0,
+        [
+            (-1.0, BASE_Z - 0.1),
+            (relief_y, BASE_Z - 0.1),
+            (relief_y, BASE_Z),
+            (0.0, BASE_Z + relief_z),
+            (-1.0, BASE_Z + relief_z),
+        ],
+    )
+    return [relief, *[pane.solid().edges("|Z").fillet(1.0) for pane in panes], *[_slot(slot, "z") for slot in slots]]
 
 
 def build_lid() -> cq.Workplane:
@@ -697,6 +780,9 @@ def mesh_data() -> dict[str, dict]:
         },
         "board_details": {
             name: [box.x0, box.x1, box.y0, box.y1, box.z0, box.z1] for name, box in XIAO_DETAILS.items()
+        },
+        "connectors": {
+            name: [box.x0, box.x1, box.y0, box.y1, box.z0, box.z1] for name, box in WIRE_CONNECTORS.items()
         },
         "wires": [
             {"name": wire.name, "color": wire.color, "radius": wire.radius, "points": wire.points} for wire in WIRES

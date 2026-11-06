@@ -1,4 +1,5 @@
 """Geometry checks for the printed enclosure. All volumes are measured on the real solids."""
+import math
 from functools import reduce
 from itertools import combinations
 from pathlib import Path
@@ -87,6 +88,20 @@ def test_pms_port_opening_is_not_smaller_than_the_port(
     assert open_area_through_wall(base, wall, enc.WALL) >= port_area
 
 
+def test_pms_ports_match_the_drawing() -> None:
+    # Numbers come from the datasheet drawing, measured from the left and top of the air face.
+    body = enc.PMS_BOX
+    fan = enc.PMS_FAN_PORT
+    assert (fan.x0 + fan.x1) / 2 - body.x0 == pytest.approx(35.8)
+    assert fan.x1 - fan.x0 == pytest.approx(18.0)
+    assert body.z1 - fan.z1 == pytest.approx(20.9 / 2 - 9.0)
+    assert body.z1 - fan.z0 == pytest.approx(20.9 / 2 + 9.0)
+    small = enc.PMS_SMALL_PORTS
+    assert small.x0 - body.x0 == pytest.approx(6.0 - 1.0)
+    assert small.x1 - body.x0 == pytest.approx(18.0 + 1.0)
+    assert body.z1 - (small.z0 + small.z1) / 2 == pytest.approx(2.45)
+
+
 def test_pms_cavity_in_front_of_the_ports_is_clear(base: cq.Workplane) -> None:
     for port in (enc.PMS_SMALL_PORTS, enc.PMS_FAN_PORT):
         assert solid_in(base, enc.Box(port.x0, port.x1, enc.WALL, enc.PMS_FACE_Y, port.z0, port.z1)) < EMPTY
@@ -104,6 +119,12 @@ def test_pms_ports_are_divided_by_a_rib(base: cq.Workplane) -> None:
         enc.PMS_BOX.z1 - 1,
     )
     assert solid_in(base, rib) == pytest.approx(rib.volume, rel=1e-3)
+
+
+def test_pms_gasket_tape_closes_the_gap_at_the_rib_and_has_a_seat() -> None:
+    # The rib stops short of the sensor, so without compressed tape the two ports are connected.
+    assert enc.GASKET_TAPE >= enc.GASKET_GAP + 0.3
+    assert enc.PMS_DIVIDER_WIDTH >= 2.5
 
 
 def test_usb_opening_clears_the_plug(base: cq.Workplane) -> None:
@@ -209,14 +230,30 @@ def test_wire_room_is_clear(base: cq.Workplane, lid: cq.Workplane, envelopes: di
             assert overlap(envelope, room.solid()) < EMPTY, name
 
 
-def test_pms_cable_slack_fits_a_long_factory_cable() -> None:
+def test_pms_cable_slack_volume_is_enough_for_a_long_factory_cable() -> None:
     # 200 mm of 8-way flat cable, about 10 x 1 mm, with half as much again for folding.
     assert enc.PMS_CABLE_SLACK.volume >= 1.5 * 200 * 10 * 1
 
 
-def test_sensor_room_holds_both_connectors() -> None:
-    length, width, height = enc.WIRE_CONNECTOR_MATED, *enc.WIRE_CONNECTOR_SIZE
-    assert enc.SENSOR_WIRE_ROOM.volume >= 3 * 2 * length * width * height
+@pytest.mark.parametrize("name", sorted(enc.WIRE_CONNECTORS))
+def test_placed_connector_fits_in_the_sensor_room(
+    name: str, base: cq.Workplane, lid: cq.Workplane, envelopes: dict[str, cq.Workplane]
+) -> None:
+    box = enc.WIRE_CONNECTORS[name]
+    room = enc.SENSOR_WIRE_ROOM
+    assert room.x0 <= box.x0 and box.x1 <= room.x1
+    assert room.y0 <= box.y0 and box.y1 <= room.y1
+    assert room.z0 <= box.z0 and box.z1 <= room.z1
+    size = sorted((box.x1 - box.x0, box.y1 - box.y0, box.z1 - box.z0))
+    assert size == pytest.approx(sorted((*enc.WIRE_CONNECTOR_SIZE, enc.WIRE_CONNECTOR_MATED)))
+    assert solid_in(base, box) < EMPTY
+    assert solid_in(lid, box) < EMPTY
+    assert all(overlap(part, box.solid()) < EMPTY for part in envelopes.values())
+
+
+def test_placed_connectors_do_not_collide() -> None:
+    first, second = enc.WIRE_CONNECTORS.values()
+    assert overlap(first.solid(), second.solid()) < EMPTY
 
 
 @pytest.mark.parametrize(
@@ -244,6 +281,20 @@ def test_wire_does_not_pass_through_plastic_or_parts(
     assert hits == {}
 
 
+def test_wires_of_different_nets_do_not_cross() -> None:
+    paths = {
+        wire.name: reduce(lambda joined, box: joined.union(box), (box.solid() for box in enc.wire_segments(wire)))
+        for wire in enc.WIRES
+    }
+    nets = {wire.name: wire.net for wire in enc.WIRES}
+    crossings = [
+        (first, second)
+        for first, second in combinations(paths, 2)
+        if nets[first] != nets[second] and overlap(paths[first], paths[second]) >= EMPTY
+    ]
+    assert crossings == []
+
+
 def test_every_connection_from_the_wiring_table_has_a_wire() -> None:
     names = {wire.name for wire in enc.WIRES}
     assert {
@@ -253,9 +304,56 @@ def test_every_connection_from_the_wiring_table_has_a_wire() -> None:
     } <= names
 
 
-def test_rear_snap_can_be_released_from_outside(base: cq.Workplane) -> None:
+def test_rear_snap_windows_are_open(base: cq.Workplane) -> None:
     for window in enc.SNAP_WINDOWS:
         assert solid_in(base, window) < EMPTY
+
+
+def tilted_lid(lid: cq.Workplane, degrees: float) -> cq.Workplane:
+    pivot_y, pivot_z = enc.HOOK_PIVOT
+    return lid.rotate((0, pivot_y, pivot_z), (1, pivot_y, pivot_z), degrees)
+
+
+def tilted_point(y: float, z: float, degrees: float) -> tuple[float, float]:
+    pivot_y, pivot_z = enc.HOOK_PIVOT
+    angle = math.radians(degrees)
+    dy, dz = y - pivot_y, z - pivot_z
+    return (
+        pivot_y + dy * math.cos(angle) - dz * math.sin(angle),
+        pivot_z + dy * math.sin(angle) + dz * math.cos(angle),
+    )
+
+
+def position_when_crossing_the_rim(y: float, z: float) -> float:
+    """Y of a lid point at the moment it comes down through the top of the base while the lid closes."""
+    for tenth in range(300, -1, -1):
+        crossing_y, crossing_z = tilted_point(y, z, tenth / 10)
+        if crossing_z <= enc.BASE_Z:
+            return crossing_y
+    raise AssertionError("the point never reaches the rim")
+
+
+@pytest.mark.parametrize("degrees", [2, 5, 8, 10, 12])
+def test_lid_front_clears_the_wall_while_it_closes(degrees: float, base: cq.Workplane, lid: cq.Workplane) -> None:
+    front_half = enc.Box(-5, enc.OUTER_X + 5, -5, enc.OUTER_Y / 2, 15, 40).solid()
+    assert overlap(tilted_lid(lid, degrees).intersect(front_half), base) < EMPTY
+
+
+def test_front_hook_stays_under_the_rim_when_closed(base: cq.Workplane) -> None:
+    x0, x1 = enc.HOOK_SPANS[0]
+    above_hook = enc.Box(x0, x1, enc.INNER_Y0 - 0.3, enc.INNER_Y0, enc.HOOK_Z[1] + 0.3, enc.BASE_Z)
+    assert solid_in(base, above_hook) == pytest.approx(above_hook.volume, rel=1e-3)
+
+
+def test_rear_snap_tip_enters_the_base_without_catching_on_the_rim() -> None:
+    assert position_when_crossing_the_rim(*enc.SNAP_TIP) <= enc.INNER_Y1
+
+
+def test_rear_snap_bending_strain_is_low_while_the_lid_closes() -> None:
+    # Cantilever strain 1.5 * t * deflection / L^2. The tab bends across print layers, so 2% is the limit.
+    deflection = position_when_crossing_the_rim(*enc.SNAP_BUMP_TIP) - enc.INNER_Y1
+    strain = 1.5 * enc.SNAP_THICKNESS * deflection / enc.SNAP_LENGTH**2
+    assert 0 < strain <= 0.02
 
 
 def test_mesh_data_covers_printed_parts_and_components() -> None:
@@ -265,6 +363,7 @@ def test_mesh_data_covers_printed_parts_and_components() -> None:
     assert data["components"].keys() == enc.COMPONENT_BOXES.keys()
     assert data["board_details"].keys() == enc.XIAO_DETAILS.keys()
     assert [wire["name"] for wire in data["wires"]] == [wire.name for wire in enc.WIRES]
+    assert data["connectors"].keys() == enc.WIRE_CONNECTORS.keys()
     for mesh in data["parts"].values():
         assert len(mesh["vertices"]) % 3 == 0
         assert len(mesh["triangles"]) % 3 == 0
