@@ -1,8 +1,12 @@
 #include <driver/gpio.h>
 #include <esp_log.h>
 #include <nvs_flash.h>
+#include <sdkconfig.h>
 
 #include "board_config.h"
+#if CONFIG_AQ_BRINGUP
+#include "bringup.h"
+#endif
 
 static const char *TAG = "app_main";
 
@@ -20,5 +24,10 @@ extern "C" void app_main()
 {
     ESP_ERROR_CHECK(nvs_flash_init());
     select_builtin_antenna();
-    ESP_LOGI(TAG, "Air quality sensor skeleton started");
+#if CONFIG_AQ_BRINGUP
+    ESP_LOGI(TAG, "Sensor bring-up mode");
+    bringup_run();
+#else
+    ESP_LOGI(TAG, "Air quality sensor started");
+#endif
 }

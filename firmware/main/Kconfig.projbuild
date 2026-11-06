@@ -1,0 +1,18 @@
+menu "Air quality sensor"
+
+    choice AQ_BUILD_MODE
+        prompt "Firmware mode"
+        default AQ_MODE_PRODUCT
+
+        config AQ_MODE_PRODUCT
+            bool "Product firmware"
+
+        config AQ_BRINGUP
+            bool "Sensor bring-up without Matter"
+
+        config AQ_DEMO_VALUES
+            bool "Matter with demo values for the Apple Home check"
+
+    endchoice
+
+endmenu
