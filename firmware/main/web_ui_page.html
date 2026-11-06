@@ -54,7 +54,7 @@ form{padding-bottom:24px}
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const AIR={good:['Повітря хороше','Нічого робити не потрібно.'],moderate:['Повітря посереднє','Незабаром варто провітрити.'],poor:['Повітря погане','Показники перевищують норму.'],unknown:['Немає даних','Показання скоро з’являться.']};
+const AIR={good:['Повітря хороше','Нічого робити не потрібно.'],moderate:['Повітря посереднє',''],poor:['Повітря погане',''],unknown:['Немає даних','Показання скоро з’являться.']};
 const NO='немає даних',UGM3=' мкг/м³',MIN=60;
 // Every field with its limits and rounding. A factor shows seconds as minutes.
 const GROUPS=[
@@ -157,15 +157,15 @@ function showValue(id,value,unit,missing=NO){
   box.classList.toggle('none',value===null);
   box.textContent=value===null?missing:value+unit;
 }
-// Opening a window is advised only for CO₂: outside air may be dustier than the room.
+// Says which reading is raised. What to do about it is left to the person.
 function advice(s){
   const parts=[];
   if(s.fault)parts.push('Датчик не відповідає, перевірте підключення.');
-  if(s.ventilate)parts.push('Забагато CO₂, відчиніть вікно.');
+  if(s.ventilate)parts.push('Забагато CO₂.');
+  else if(s.co2!==null&&s.co2>=s.settings.co2_moderate)parts.push('Підвищений рівень CO₂.');
   if(s.dust)parts.push('У повітрі багато пилу.');
-  if(parts.length)return parts.join(' ');
-  const dustOnly=s.level==='moderate'&&s.co2!==null&&s.co2<s.settings.co2_moderate;
-  return dustOnly?'Підвищений рівень пилу.':AIR[s.level][1];
+  else if(s.pm25!==null&&s.pm25>=s.settings.pm25_moderate)parts.push('Підвищений рівень пилу.');
+  return parts.join(' ')||AIR[s.level][1];
 }
 function setAdvice(text){if($('advice').textContent!==text)$('advice').textContent=text}
 function draw(s){
