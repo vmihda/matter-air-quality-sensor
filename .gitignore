@@ -9,3 +9,5 @@ dist/
 .superpowers/
 __pycache__/
 .DS_Store
+build-*/
+sdkconfig.s3

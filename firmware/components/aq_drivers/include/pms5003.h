@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "pms5003_proto.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,7 +17,7 @@ esp_err_t pms5003_init(int uart_num, int tx_gpio, int rx_gpio);
 esp_err_t pms5003_set_awake(bool awake);
 
 // Returns ESP_ERR_TIMEOUT when no valid frame arrives in time.
-esp_err_t pms5003_read(uint16_t *pm25, uint32_t timeout_ms);
+esp_err_t pms5003_read(pms_reading_t *reading, uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }

@@ -15,4 +15,14 @@ menu "Air quality sensor"
 
     endchoice
 
+    config AQ_DEVICE_NAME
+        string "Network name of this unit"
+        default "aq-sensor"
+
+    config AQ_WEB_PASSWORD
+        string "Device page password of this unit"
+        default ""
+        help
+            The device page stays off while this is empty.
+
 endmenu

@@ -2,12 +2,10 @@
 
 #include "driver/i2c_master.h"
 #include "esp_check.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include "i2c_bus.h"
 #include "scd4x_proto.h"
 
 #define SCD41_ADDRESS 0x62
-#define SCD41_I2C_HZ 100000
 #define SCD41_TIMEOUT_MS 100
 
 #define CMD_START_PERIODIC 0x21B1
@@ -21,13 +19,8 @@
 #define STOP_DELAY_MS 500
 #define COMMAND_DELAY_MS 1
 
-// pdMS_TO_TICKS rounds down and a delay can end right after it starts, so two extra
-// ticks guarantee at least the requested time at any tick rate.
-#define WAIT_MS(ms) vTaskDelay(pdMS_TO_TICKS(ms) + 2)
-
 static const char *TAG = "scd41";
 
-static i2c_master_bus_handle_t s_bus;
 static i2c_master_dev_handle_t s_device;
 
 static esp_err_t send_command(uint16_t command)
@@ -39,7 +32,7 @@ static esp_err_t send_command(uint16_t command)
 static esp_err_t read_response(uint16_t command, uint8_t *response, size_t length)
 {
     ESP_RETURN_ON_ERROR(send_command(command), TAG, "command 0x%04X failed", command);
-    WAIT_MS(COMMAND_DELAY_MS);
+    AQ_WAIT_MS(COMMAND_DELAY_MS);
     return i2c_master_receive(s_device, response, length, SCD41_TIMEOUT_MS);
 }
 
@@ -48,22 +41,10 @@ static esp_err_t create_device(int sda_gpio, int scl_gpio)
     if (s_device != NULL) {
         return ESP_OK;
     }
-    const i2c_master_bus_config_t bus_config = {
-        .i2c_port = -1,
-        .sda_io_num = sda_gpio,
-        .scl_io_num = scl_gpio,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true,
-    };
-    ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_config, &s_bus), TAG, "bus init failed");
+    i2c_master_bus_handle_t bus = NULL;
+    ESP_RETURN_ON_ERROR(aq_i2c_bus_get(sda_gpio, scl_gpio, &bus), TAG, "bus init failed");
 
-    const i2c_device_config_t device_config = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = SCD41_ADDRESS,
-        .scl_speed_hz = SCD41_I2C_HZ,
-    };
-    return i2c_master_bus_add_device(s_bus, &device_config, &s_device);
+    return aq_i2c_add_device(bus, SCD41_ADDRESS, &s_device);
 }
 
 esp_err_t scd41_init(int sda_gpio, int scl_gpio)
@@ -72,7 +53,7 @@ esp_err_t scd41_init(int sda_gpio, int scl_gpio)
 
     // The sensor keeps measuring across an MCU reset, and most commands need it idle.
     ESP_RETURN_ON_ERROR(send_command(CMD_STOP_PERIODIC), TAG, "no reply from SCD41, check wiring");
-    WAIT_MS(STOP_DELAY_MS);
+    AQ_WAIT_MS(STOP_DELAY_MS);
     return ESP_OK;
 }
 
@@ -85,11 +66,11 @@ esp_err_t scd41_get_serial(uint64_t *serial)
 
 esp_err_t scd41_set_temp_offset(float offset_c)
 {
-    const uint16_t word = (uint16_t)(offset_c * 65535.0f / 175.0f);
+    const uint16_t word = scd4x_encode_temp_offset(offset_c);
     uint8_t bytes[5] = {CMD_SET_TEMP_OFFSET >> 8, CMD_SET_TEMP_OFFSET & 0xFF, word >> 8, word & 0xFF, 0};
     bytes[4] = scd4x_crc8(&bytes[2], 2);
     ESP_RETURN_ON_ERROR(i2c_master_transmit(s_device, bytes, sizeof(bytes), SCD41_TIMEOUT_MS), TAG, "offset write failed");
-    WAIT_MS(COMMAND_DELAY_MS);
+    AQ_WAIT_MS(COMMAND_DELAY_MS);
     return ESP_OK;
 }
 

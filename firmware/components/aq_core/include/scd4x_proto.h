@@ -11,6 +11,9 @@ extern "C" {
 
 uint8_t scd4x_crc8(const uint8_t *data, size_t len);
 
+// The set_temperature_offset word for an offset in degrees Celsius.
+uint16_t scd4x_encode_temp_offset(float offset_c);
+
 // Returns false on a CRC error or a CO2 value of zero, which the sensor reports when it has no reading.
 bool scd4x_decode_measurement(const uint8_t raw[9], float *co2_ppm, float *temp_c, float *rh_pct);
 

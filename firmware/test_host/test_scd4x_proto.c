@@ -110,8 +110,15 @@ static void data_ready_rejects_bad_crc(void)
     CHECK(!scd4x_decode_data_ready(raw, &ready));
 }
 
+// The example comes from the SCD4x datasheet: 5.4 degrees C is 0x07E6.
+static void temperature_offset_matches_datasheet_example(void)
+{
+    CHECK(scd4x_encode_temp_offset(5.4f) == 0x07E6);
+}
+
 int main(void)
 {
+    RUN_TEST(temperature_offset_matches_datasheet_example);
     RUN_TEST(data_ready_when_low_bits_set);
     RUN_TEST(data_not_ready_when_low_bits_clear);
     RUN_TEST(data_ready_rejects_bad_crc);

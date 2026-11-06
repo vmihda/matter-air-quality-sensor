@@ -1,7 +1,7 @@
 #include "sensors_task.h"
 
-#include <atomic>
 #include <cstdint>
+#include <optional>
 
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -9,55 +9,52 @@
 #include <freertos/task.h>
 
 #include "aq_config.h"
-#include "aq_engine.h"
 #include "board_config.h"
+#include "ens160.h"
 #include "matter_app.h"
 #include "pms5003.h"
 #include "scd41.h"
+#include "settings_store.h"
 
 static const char *TAG = "sensors";
 
 static constexpr TickType_t LOOP_PERIOD = pdMS_TO_TICKS(1000);
 static constexpr uint32_t PMS_READ_TIMEOUT_MS = 3000;
 static constexpr uint32_t SCD41_RESTART_AFTER_MS = 30000;
+static constexpr uint32_t ENS160_RESTART_AFTER_MS = 30000;
+static constexpr uint32_t ENS160_SILENT_LIMIT_MS = 60000;
+static constexpr uint32_t ENS160_AMBIENT_PERIOD_MS = 60000;
 static constexpr uint32_t TASK_STACK_BYTES = 4096;
 static constexpr UBaseType_t TASK_PRIORITY = 3;
 
-static std::atomic<bool> s_has_fault{false};
-static std::atomic<bool> s_has_first_readings{false};
-
-struct Measurements {
-    float co2_ppm = 0;
-    float pm25_ugm3 = 0;
-    float temperature_c = 0;
-    float humidity_pct = 0;
-    bool has_co2 = false;
-    bool has_pm25 = false;
-};
+static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
+static SensorsStatus s_status{};
 
 static uint64_t now_ms()
 {
     return static_cast<uint64_t>(esp_timer_get_time() / 1000);
 }
 
-// Runs the whole sequence so a sensor that lost power comes back in periodic mode.
-static bool start_scd41()
-{
-    if (scd41_init(BOARD_PIN_SCD41_SDA, BOARD_PIN_SCD41_SCL) != ESP_OK ||
-        scd41_set_temp_offset(AQ_TEMP_OFFSET_C) != ESP_OK || scd41_start() != ESP_OK) {
-        ESP_LOGW(TAG, "SCD41 did not start, will retry");
-        return false;
-    }
-    return true;
-}
-
 class Scd41Poller {
 public:
-    void poll(aq_engine_t &engine, Measurements &values, uint64_t now)
+    void start(float temp_offset_c, uint64_t now)
     {
-        if (now - last_attempt_ms_ >= SCD41_RESTART_AFTER_MS && now - last_success_ms_ >= SCD41_RESTART_AFTER_MS) {
-            last_attempt_ms_ = now;
-            running_ = start_scd41();
+        temp_offset_c_ = temp_offset_c;
+        last_success_ms_ = now;
+        // The whole sequence also brings back a sensor that lost power.
+        running_ = scd41_init(BOARD_PIN_I2C_SDA, BOARD_PIN_I2C_SCL) == ESP_OK &&
+                   scd41_set_temp_offset(temp_offset_c) == ESP_OK && scd41_start() == ESP_OK;
+        if (!running_) {
+            ESP_LOGW(TAG, "SCD41 did not start, will retry");
+        }
+    }
+
+    void poll(aq_engine_t &engine, SensorsStatus &values, float temp_offset_c, uint64_t now)
+    {
+        const bool offset_changed = temp_offset_c != temp_offset_c_;
+        const bool silent_too_long = now - last_success_ms_ >= SCD41_RESTART_AFTER_MS;
+        if (offset_changed || silent_too_long) {
+            start(temp_offset_c, now);
         }
         if (!running_) {
             return;
@@ -65,110 +62,178 @@ public:
         const esp_err_t err = scd41_read(&values.co2_ppm, &values.temperature_c, &values.humidity_pct);
         if (err == ESP_OK) {
             last_success_ms_ = now;
-            values.has_co2 = true;
             aq_engine_on_co2(&engine, values.co2_ppm, now);
         } else if (err != ESP_ERR_NOT_FOUND) {
-            ESP_LOGW(TAG, "SCD41 read failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "SCD41 read failed: 0x%x %s", err, esp_err_to_name(err));
         }
     }
 
-    void start(uint64_t now)
-    {
-        last_attempt_ms_ = now;
-        last_success_ms_ = now;
-        running_ = start_scd41();
-    }
-
 private:
-    uint64_t last_attempt_ms_ = 0;
+    float temp_offset_c_ = 0;
     uint64_t last_success_ms_ = 0;
     bool running_ = false;
 };
 
 class Pms5003Poller {
 public:
-    void poll(aq_engine_t &engine, Measurements &values, uint64_t now)
+    void poll(aq_engine_t &engine, SensorsStatus &values, uint32_t cycle_s, uint64_t now)
     {
         if (!awake_) {
-            if (now < next_wake_ms_) {
+            if (!aq_pms_wake_due(woke_before_, woke_at_ms_, cycle_s, now)) {
                 return;
             }
-            awake_ = pms5003_set_awake(true) == ESP_OK;
-            woke_at_ms_ = now;
+            if (pms5003_set_awake(true) == ESP_OK) {
+                awake_ = true;
+                woke_before_ = true;
+                woke_at_ms_ = now;
+            }
             return;
         }
         if (now - woke_at_ms_ < AQ_PMS_SETTLE_MS) {
             return;
         }
 
-        uint16_t pm25 = 0;
-        const esp_err_t err = pms5003_read(&pm25, PMS_READ_TIMEOUT_MS);
+        pms_reading_t reading{};
+        const esp_err_t err = pms5003_read(&reading, PMS_READ_TIMEOUT_MS);
         if (err == ESP_OK) {
-            values.pm25_ugm3 = pm25;
-            values.has_pm25 = true;
+            values.pm1_ugm3 = reading.pm1;
+            values.pm25_ugm3 = reading.pm25;
+            values.pm10_ugm3 = reading.pm10;
             aq_engine_on_pm25(&engine, values.pm25_ugm3, now);
         } else {
-            ESP_LOGW(TAG, "PMS5003 read failed: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "PMS5003 read failed: 0x%x %s", err, esp_err_to_name(err));
         }
-        next_wake_ms_ = woke_at_ms_ + AQ_PMS_CYCLE_MS;
+        // With sleep disabled the fan keeps running, and the wake command is harmless.
 #if AQ_PMS_USE_SLEEP
-        awake_ = pms5003_set_awake(false) != ESP_OK;
-#else
-        woke_at_ms_ = next_wake_ms_ - AQ_PMS_SETTLE_MS;
+        if (pms5003_set_awake(false) != ESP_OK) {
+            ESP_LOGW(TAG, "PMS5003 sleep command failed");
+        }
 #endif
+        awake_ = false;
     }
 
 private:
-    uint64_t next_wake_ms_ = 0;
     uint64_t woke_at_ms_ = 0;
+    bool woke_before_ = false;
     bool awake_ = false;
 };
 
-static bool alerts_differ(const aq_output_t &a, const aq_output_t &b)
+// VOC is an extra reading: a missing or failing ENS160 never changes the air quality level or the fault state.
+class Ens160Poller {
+public:
+    void poll(SensorsStatus &values, uint64_t now)
+    {
+        if (!running_) {
+            // The first read waits for the next pass, so the sensor has entered its sensing mode.
+            try_start(now);
+            return;
+        }
+        send_ambient(values, now);
+
+        ens160_reading_t reading{};
+        const esp_err_t err = ens160_read(&reading);
+        if (err == ESP_OK) {
+            last_success_ms_ = now;
+            values.has_tvoc = ens160_is_reportable(reading.validity);
+            values.tvoc_warming_up = ens160_is_warming_up(reading.validity);
+            values.tvoc_ugm3 = ens160_ppb_to_ugm3(reading.tvoc_ppb);
+        } else if (err == ESP_ERR_INVALID_STATE || now - last_success_ms_ >= ENS160_SILENT_LIMIT_MS) {
+            // A single I2C error is retried on the next pass. Only lasting silence or stopped sensing restarts it.
+            ESP_LOGW(TAG, "ENS160 stopped answering: 0x%x %s", err, esp_err_to_name(err));
+            running_ = false;
+            values.has_tvoc = false;
+            values.tvoc_warming_up = false;
+        }
+    }
+
+private:
+    void try_start(uint64_t now)
+    {
+        if (now < next_attempt_ms_) {
+            return;
+        }
+        next_attempt_ms_ = now + ENS160_RESTART_AFTER_MS;
+        running_ = ens160_init(BOARD_PIN_I2C_SDA, BOARD_PIN_I2C_SCL) == ESP_OK;
+        next_ambient_ms_ = 0;
+        last_success_ms_ = now;
+    }
+
+    void send_ambient(const SensorsStatus &values, uint64_t now)
+    {
+        if (!values.has_scd41 || now < next_ambient_ms_) {
+            return;
+        }
+        if (ens160_set_ambient(values.temperature_c, values.humidity_pct) == ESP_OK) {
+            next_ambient_ms_ = now + ENS160_AMBIENT_PERIOD_MS;
+        }
+    }
+
+    uint64_t next_attempt_ms_ = 0;
+    uint64_t next_ambient_ms_ = 0;
+    uint64_t last_success_ms_ = 0;
+    bool running_ = false;
+};
+
+static void store_status(const SensorsStatus &status)
 {
-    return a.ventilate_open != b.ventilate_open || a.dust_open != b.dust_open || a.fault_open != b.fault_open;
+    taskENTER_CRITICAL(&s_status_lock);
+    s_status = status;
+    taskEXIT_CRITICAL(&s_status_lock);
 }
 
-static void publish_measurements(const Measurements &values)
+static std::optional<float> if_present(bool present, float value)
 {
-    if (values.has_co2) {
-        matter_app_set_co2(values.co2_ppm);
-        matter_app_set_temperature(values.temperature_c);
-        matter_app_set_humidity(values.humidity_pct);
-    }
-    if (values.has_pm25) {
-        matter_app_set_pm25(values.pm25_ugm3);
-    }
+    return present ? std::optional<float>{value} : std::nullopt;
+}
+
+// A sensor without fresh data reports no value, so Home never shows a frozen number.
+static void publish_measurements(const SensorsStatus &values)
+{
+    matter_app_set_co2(if_present(values.has_scd41, values.co2_ppm));
+    matter_app_set_temperature(if_present(values.has_scd41, values.temperature_c));
+    matter_app_set_humidity(if_present(values.has_scd41, values.humidity_pct));
+    matter_app_set_pm25(if_present(values.has_pms5003, values.pm25_ugm3));
+    matter_app_set_pm10(if_present(values.has_pms5003, values.pm10_ugm3));
+    matter_app_set_tvoc(if_present(values.has_tvoc, values.tvoc_ugm3));
 }
 
 static void sensors_task(void *)
 {
-    aq_engine_t engine;
+    aq_settings_t settings{};
+    settings_store_get(&settings);
+
+    aq_engine_t engine{};
     aq_engine_init(&engine, now_ms());
-    Measurements values;
+    aq_engine_set_settings(&engine, &settings, now_ms());
+
+    SensorsStatus values{};
     Scd41Poller scd41;
     Pms5003Poller pms5003;
-    scd41.start(now_ms());
+    Ens160Poller ens160;
+    scd41.start(settings.temp_offset_c, now_ms());
 
-    aq_output_t published{};
+    aq_level_t published_level{};
     uint64_t last_publish_ms = 0;
     TickType_t last_wake = xTaskGetTickCount();
     while (true) {
         const uint64_t now = now_ms();
-        scd41.poll(engine, values, now);
-        pms5003.poll(engine, values, now);
 
-        const aq_output_t output = aq_engine_evaluate(&engine, now);
-        s_has_fault = output.fault_open;
-        s_has_first_readings = values.has_co2 && values.has_pm25;
+        settings_store_get(&settings);
+        aq_engine_set_settings(&engine, &settings, now);
 
-        if (alerts_differ(output, published)) {
-            matter_app_set_alerts(output.ventilate_open, output.dust_open, output.fault_open);
+        scd41.poll(engine, values, settings.temp_offset_c, now);
+        pms5003.poll(engine, values, settings.pms_cycle_s, now);
+        ens160.poll(values, now);
+
+        values.output = aq_engine_evaluate(&engine, now);
+        values.has_scd41 = values.output.co2_valid;
+        values.has_pms5003 = values.output.pm25_valid;
+        store_status(values);
+
+        if (values.output.level != published_level) {
+            matter_app_set_level(values.output.level);
+            published_level = values.output.level;
         }
-        if (output.level != published.level) {
-            matter_app_set_level(output.level);
-        }
-        published = output;
 
         if (now - last_publish_ms >= AQ_PUBLISH_PERIOD_MS) {
             last_publish_ms = now;
@@ -189,12 +254,38 @@ esp_err_t sensors_task_start()
                : ESP_ERR_NO_MEM;
 }
 
+#if CONFIG_AQ_DEMO_VALUES
+void sensors_task_set_status_for_demo(const SensorsStatus &status)
+{
+    store_status(status);
+    publish_measurements(status);
+}
+#endif
+
+void sensors_task_get_status(SensorsStatus *out)
+{
+    taskENTER_CRITICAL(&s_status_lock);
+    *out = s_status;
+    taskEXIT_CRITICAL(&s_status_lock);
+}
+
 bool sensors_task_has_fault()
 {
-    return s_has_fault;
+    SensorsStatus status{};
+    sensors_task_get_status(&status);
+    return status.output.fault_alert;
 }
 
 bool sensors_task_has_first_readings()
 {
-    return s_has_first_readings;
+    SensorsStatus status{};
+    sensors_task_get_status(&status);
+    return status.has_scd41 && status.has_pms5003;
+}
+
+bool sensors_task_has_any_reading()
+{
+    SensorsStatus status{};
+    sensors_task_get_status(&status);
+    return status.has_scd41 || status.has_pms5003;
 }

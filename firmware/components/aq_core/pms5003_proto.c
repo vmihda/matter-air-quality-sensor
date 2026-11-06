@@ -6,8 +6,10 @@
 #define START_1 0x42
 #define START_2 0x4D
 #define FRAME_DATA_LENGTH 0x1C
+#define PM1_ATMOSPHERIC_OFFSET 10
 #define PM25_ATMOSPHERIC_OFFSET 12
-#define PM25_MAX_UGM3 1000
+#define PM10_ATMOSPHERIC_OFFSET 14
+#define PM_MAX_UGM3 1000
 #define CMD_SLEEP_MODE 0xE4
 
 static uint16_t read_u16(const uint8_t *bytes)
@@ -50,7 +52,7 @@ static bool byte_fits_header(uint8_t position, uint8_t byte)
     }
 }
 
-static void build_sleep_mode_cmd(uint8_t out[7], uint8_t mode)
+static void build_sleep_mode_cmd(uint8_t out[PMS_CMD_SIZE], uint8_t mode)
 {
     out[0] = START_1;
     out[1] = START_2;
@@ -87,7 +89,7 @@ void pms_parser_init(pms_parser_t *p)
     p->length = 0;
 }
 
-bool pms_parser_feed(pms_parser_t *p, uint8_t byte, uint16_t *pm25_atm)
+bool pms_parser_feed(pms_parser_t *p, uint8_t byte, pms_reading_t *reading)
 {
     accept_byte(p, byte);
     if (p->length < PMS_FRAME_SIZE) {
@@ -100,20 +102,24 @@ bool pms_parser_feed(pms_parser_t *p, uint8_t byte, uint16_t *pm25_atm)
     }
     p->length = 0;
 
-    const uint16_t pm25 = read_u16(p->frame + PM25_ATMOSPHERIC_OFFSET);
-    if (pm25 > PM25_MAX_UGM3) {
+    const pms_reading_t parsed = {
+        .pm1 = read_u16(p->frame + PM1_ATMOSPHERIC_OFFSET),
+        .pm25 = read_u16(p->frame + PM25_ATMOSPHERIC_OFFSET),
+        .pm10 = read_u16(p->frame + PM10_ATMOSPHERIC_OFFSET),
+    };
+    if (parsed.pm1 > PM_MAX_UGM3 || parsed.pm25 > PM_MAX_UGM3 || parsed.pm10 > PM_MAX_UGM3) {
         return false;
     }
-    *pm25_atm = pm25;
+    *reading = parsed;
     return true;
 }
 
-void pms_build_sleep_cmd(uint8_t out[7])
+void pms_build_sleep_cmd(uint8_t out[PMS_CMD_SIZE])
 {
     build_sleep_mode_cmd(out, 0x00);
 }
 
-void pms_build_wake_cmd(uint8_t out[7])
+void pms_build_wake_cmd(uint8_t out[PMS_CMD_SIZE])
 {
     build_sleep_mode_cmd(out, 0x01);
 }

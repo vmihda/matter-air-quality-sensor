@@ -1,0 +1,2 @@
+# Test board for the Apple Home check: an ESP32-S3 with no sensors attached.
+CONFIG_IDF_TARGET="esp32s3"

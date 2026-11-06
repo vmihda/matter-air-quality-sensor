@@ -55,3 +55,8 @@ bool scd4x_decode_data_ready(const uint8_t raw[3], bool *ready)
     *ready = (status & 0x07FF) != 0;
     return true;
 }
+
+uint16_t scd4x_encode_temp_offset(float offset_c)
+{
+    return (uint16_t)(offset_c * 65535.0f / 175.0f);
+}
