@@ -43,8 +43,11 @@ static esp_err_t read_response(uint16_t command, uint8_t *response, size_t lengt
     return i2c_master_receive(s_device, response, length, SCD41_TIMEOUT_MS);
 }
 
-esp_err_t scd41_init(int sda_gpio, int scl_gpio)
+static esp_err_t create_device(int sda_gpio, int scl_gpio)
 {
+    if (s_device != NULL) {
+        return ESP_OK;
+    }
     const i2c_master_bus_config_t bus_config = {
         .i2c_port = -1,
         .sda_io_num = sda_gpio,
@@ -60,7 +63,12 @@ esp_err_t scd41_init(int sda_gpio, int scl_gpio)
         .device_address = SCD41_ADDRESS,
         .scl_speed_hz = SCD41_I2C_HZ,
     };
-    ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(s_bus, &device_config, &s_device), TAG, "device add failed");
+    return i2c_master_bus_add_device(s_bus, &device_config, &s_device);
+}
+
+esp_err_t scd41_init(int sda_gpio, int scl_gpio)
+{
+    ESP_RETURN_ON_ERROR(create_device(sda_gpio, scl_gpio), TAG, "I2C setup failed");
 
     // The sensor keeps measuring across an MCU reset, and most commands need it idle.
     ESP_RETURN_ON_ERROR(send_command(CMD_STOP_PERIODIC), TAG, "no reply from SCD41, check wiring");

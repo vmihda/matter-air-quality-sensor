@@ -2,20 +2,24 @@
 
 #include <driver/gpio.h>
 #include <esp_log.h>
+#include <esp_matter.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <nvs_flash.h>
 #include <sdkconfig.h>
 
 #include "board_config.h"
-#if CONFIG_AQ_BRINGUP
+#include "boot_button.h"
 #include "bringup.h"
-#elif CONFIG_AQ_DEMO_VALUES
 #include "demo_mode.h"
 #include "matter_app.h"
-#else
-#include "matter_app.h"
-#endif
+#include "sensors_task.h"
+#include "status_led.h"
 
 static const char *TAG = "app_main";
+
+// Lets the fast blink be seen before the device restarts.
+static constexpr TickType_t RESET_SIGNAL_TIME = pdMS_TO_TICKS(1500);
 
 static void select_builtin_antenna()
 {
@@ -26,6 +30,14 @@ static void select_builtin_antenna()
         gpio_set_direction(pin, GPIO_MODE_OUTPUT);
         gpio_set_level(pin, 0);
     }
+}
+
+static void factory_reset_with_signal()
+{
+    ESP_LOGW(TAG, "Factory reset");
+    status_led_set_resetting();
+    vTaskDelay(RESET_SIGNAL_TIME);
+    esp_matter::factory_reset();
 }
 
 static void start_firmware()
@@ -39,6 +51,9 @@ static void start_firmware()
     ESP_ERROR_CHECK(demo_mode_start());
 #else
     ESP_ERROR_CHECK(matter_app_start());
+    ESP_ERROR_CHECK(sensors_task_start());
+    ESP_ERROR_CHECK(status_led_start());
+    ESP_ERROR_CHECK(boot_button_start(status_led_show_for_a_moment, factory_reset_with_signal));
 #endif
 }
 

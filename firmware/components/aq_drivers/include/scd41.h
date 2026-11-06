@@ -9,7 +9,8 @@
 extern "C" {
 #endif
 
-// Leaves measurement stopped, including after a reboot of the MCU alone.
+// Leaves measurement stopped, including after a reboot of the MCU alone. Safe to call again
+// to recover a sensor that lost power or stopped answering.
 esp_err_t scd41_init(int sda_gpio, int scl_gpio);
 
 // Must run while measurement is stopped.

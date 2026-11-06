@@ -9,6 +9,8 @@
 
 #define BOARD_PIN_BOOT 9
 #define BOARD_PIN_LED 15
+// To confirm on the real board during the sensor check.
+#define BOARD_LED_ACTIVE_LOW true
 
 // Low on both pins selects the built-in ceramic antenna.
 #define BOARD_PIN_RF_SWITCH_POWER 3
