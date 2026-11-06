@@ -10,9 +10,14 @@
 #define AQ_PM25_MODERATE_UGM3 15.0f
 #define AQ_PM25_POOR_UGM3 35.0f
 
-// How long a value must stay at the Poor threshold before an alert starts.
-// An alert clears below the Moderate threshold.
-#define AQ_ALERT_HOLD_MS 300000u
+// How long a value must stay at the Poor threshold before the level becomes Poor.
+// The level leaves Poor only below the Moderate threshold, so it does not flicker.
+#define AQ_CO2_HOLD_S 120u
+#define AQ_PM25_HOLD_S 300u
+
+// A PM2.5 reading can arrive a moment before a full interval has passed. Without this,
+// a hold equal to the interval would need a third reading instead of a second.
+#define AQ_PM25_HOLD_SLACK_MS 5000u
 
 // A sensor with no valid reading for this long is reported as failed.
 #define AQ_CO2_STALE_MS 60000u

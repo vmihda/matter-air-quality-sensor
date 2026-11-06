@@ -33,12 +33,13 @@ static void record(aq_channel_t *channel, float value, uint64_t now_ms)
     channel->faulted = false;
 }
 
-static aq_level_t level_for(float value, float moderate, float poor)
+// A value at the Poor threshold counts as Moderate until its hold has passed.
+static aq_level_t level_for(const aq_channel_t *channel, float moderate)
 {
-    if (value >= poor) {
+    if (channel->alert.active) {
         return AQ_POOR;
     }
-    return value >= moderate ? AQ_MODERATE : AQ_GOOD;
+    return channel->value >= moderate ? AQ_MODERATE : AQ_GOOD;
 }
 
 // Latched, so that later settings cannot make a dead sensor's old value look fresh again.
@@ -78,13 +79,15 @@ void aq_engine_set_settings(aq_engine_t *e, const aq_settings_t *s, uint64_t now
 void aq_engine_on_co2(aq_engine_t *e, float ppm, uint64_t now_ms)
 {
     record(&e->co2, ppm, now_ms);
-    update_alert(&e->co2.alert, ppm, e->settings.co2_poor_ppm, e->settings.co2_moderate_ppm, AQ_ALERT_HOLD_MS, now_ms);
+    update_alert(&e->co2.alert, ppm, e->settings.co2_poor_ppm, e->settings.co2_moderate_ppm,
+                 (uint64_t)e->settings.co2_hold_s * 1000u, now_ms);
 }
 
 void aq_engine_on_pm25(aq_engine_t *e, float ugm3, uint64_t now_ms)
 {
     record(&e->pm25, ugm3, now_ms);
-    update_alert(&e->pm25.alert, ugm3, e->settings.pm25_poor, e->settings.pm25_moderate, AQ_ALERT_HOLD_MS, now_ms);
+    update_alert(&e->pm25.alert, ugm3, e->settings.pm25_poor, e->settings.pm25_moderate,
+                 (uint64_t)e->settings.pm25_hold_s * 1000u - AQ_PM25_HOLD_SLACK_MS, now_ms);
 }
 
 aq_output_t aq_engine_evaluate(aq_engine_t *e, uint64_t now_ms)
@@ -103,8 +106,8 @@ aq_output_t aq_engine_evaluate(aq_engine_t *e, uint64_t now_ms)
     };
 
     if (out.co2_valid && out.pm25_valid) {
-        const aq_level_t co2_level = level_for(e->co2.value, e->settings.co2_moderate_ppm, e->settings.co2_poor_ppm);
-        const aq_level_t pm25_level = level_for(e->pm25.value, e->settings.pm25_moderate, e->settings.pm25_poor);
+        const aq_level_t co2_level = level_for(&e->co2, e->settings.co2_moderate_ppm);
+        const aq_level_t pm25_level = level_for(&e->pm25, e->settings.pm25_moderate);
         out.level = co2_level > pm25_level ? co2_level : pm25_level;
     }
     return out;

@@ -54,12 +54,13 @@ form{padding-bottom:24px}
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const AIR={good:['Повітря хороше','Нічого робити не потрібно.'],moderate:['Повітря посереднє','Незабаром варто провітрити.'],poor:['Повітря погане','Показники перевищують норму, варто провітрити.'],unknown:['Немає даних','Показання скоро з’являться.']};
+const AIR={good:['Повітря хороше','Нічого робити не потрібно.'],moderate:['Повітря посереднє','Незабаром варто провітрити.'],poor:['Повітря погане','Показники перевищують норму.'],unknown:['Немає даних','Показання скоро з’являться.']};
 const NO='немає даних',UGM3=' мкг/м³',MIN=60;
 // Every field with its limits and rounding. A factor shows seconds as minutes.
 const GROUPS=[
 ['CO₂, ppm',[['co2_moderate','Середній рівень від',400,5000],['co2_poor','Поганий рівень від',400,5000]]],
 ['PM2.5, мкг/м³',[['pm25_moderate','Середній рівень від',0,1000],['pm25_poor','Поганий рівень від',0,1000]]],
+['Затримка оцінки «погане», хвилини',[['co2_hold_s','Для CO₂',0.5,60,MIN],['pm25_hold_s','Для пилу',0.5,60,MIN]]],
 ['Вимірювання пилу',[['cycle_s','Інтервал, хвилини',2,60,MIN]]],
 ['Поправка',[['temp_offset','Відняти від температури, °C',0,20]]]];
 const FIELDS=GROUPS.flatMap(g=>g[1]);
@@ -163,8 +164,8 @@ function advice(s){
   if(s.ventilate)parts.push('Забагато CO₂, відчиніть вікно.');
   if(s.dust)parts.push('У повітрі багато пилу.');
   if(parts.length)return parts.join(' ');
-  const raised=s.level==='moderate'||s.level==='poor',co2High=s.co2!==null&&s.co2>=s.settings.co2_moderate;
-  return raised&&!co2High?'Підвищений рівень пилу.':AIR[s.level][1];
+  const dustOnly=s.level==='moderate'&&s.co2!==null&&s.co2<s.settings.co2_moderate;
+  return dustOnly?'Підвищений рівень пилу.':AIR[s.level][1];
 }
 function setAdvice(text){if($('advice').textContent!==text)$('advice').textContent=text}
 function draw(s){

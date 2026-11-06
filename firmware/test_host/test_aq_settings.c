@@ -18,6 +18,8 @@ static void defaults_match_the_spec(void)
     CHECK_NEAR(s.co2_poor_ppm, 1000, 0.001);
     CHECK_NEAR(s.pm25_moderate, 15, 0.001);
     CHECK_NEAR(s.pm25_poor, 35, 0.001);
+    CHECK(s.co2_hold_s == 120);
+    CHECK(s.pm25_hold_s == 300);
     CHECK(s.pms_cycle_s == 300);
     CHECK_NEAR(s.temp_offset_c, 4, 0.001);
     CHECK(aq_settings_validate(&s));
@@ -34,6 +36,24 @@ static void rejects_cycle_out_of_range(void)
     CHECK(aq_settings_validate(&s));
     s.pms_cycle_s = 3601;
     CHECK(!aq_settings_validate(&s));
+}
+
+static void rejects_hold_out_of_range(void)
+{
+    aq_settings_t s = valid_settings();
+    s.co2_hold_s = 9;
+    CHECK(!aq_settings_validate(&s));
+    s.co2_hold_s = 3601;
+    CHECK(!aq_settings_validate(&s));
+    s = valid_settings();
+    s.pm25_hold_s = 9;
+    CHECK(!aq_settings_validate(&s));
+    s.pm25_hold_s = 3601;
+    CHECK(!aq_settings_validate(&s));
+    s.pm25_hold_s = 10;
+    CHECK(aq_settings_validate(&s));
+    s.pm25_hold_s = 3600;
+    CHECK(aq_settings_validate(&s));
 }
 
 static void rejects_thresholds_out_of_order(void)
@@ -77,7 +97,7 @@ static void rejects_not_a_number(void)
 
 static const char *const VALID_FORM =
     "co2_moderate=850&co2_poor=1100&pm25_moderate=12&pm25_poor=30"
-    "&cycle_s=600&temp_offset=2.5";
+    "&co2_hold_s=90&pm25_hold_s=240&cycle_s=600&temp_offset=2.5";
 
 static void parses_a_complete_form(void)
 {
@@ -87,6 +107,8 @@ static void parses_a_complete_form(void)
     CHECK_NEAR(s.co2_poor_ppm, 1100, 0.001);
     CHECK_NEAR(s.pm25_moderate, 12, 0.001);
     CHECK_NEAR(s.pm25_poor, 30, 0.001);
+    CHECK(s.co2_hold_s == 90);
+    CHECK(s.pm25_hold_s == 240);
     CHECK(s.pms_cycle_s == 600);
     CHECK_NEAR(s.temp_offset_c, 2.5, 0.001);
 }
@@ -102,7 +124,7 @@ static void form_rejects_garbage_number(void)
     aq_settings_t s;
     CHECK(!aq_settings_from_form(
         "co2_moderate=abc&co2_poor=1100&pm25_moderate=12&pm25_poor=30"
-        "&cycle_s=600&temp_offset=2.5",
+        "&co2_hold_s=90&pm25_hold_s=240&cycle_s=600&temp_offset=2.5",
         &s));
 }
 
@@ -111,7 +133,7 @@ static void form_rejects_trailing_garbage(void)
     aq_settings_t s;
     CHECK(!aq_settings_from_form(
         "co2_moderate=850x&co2_poor=1100&pm25_moderate=12&pm25_poor=30"
-        "&cycle_s=600&temp_offset=2.5",
+        "&co2_hold_s=90&pm25_hold_s=240&cycle_s=600&temp_offset=2.5",
         &s));
 }
 
@@ -120,7 +142,7 @@ static void form_rejects_negative_integer(void)
     aq_settings_t s;
     CHECK(!aq_settings_from_form(
         "co2_moderate=850&co2_poor=1100&pm25_moderate=12&pm25_poor=30"
-        "&cycle_s=-600&temp_offset=2.5",
+        "&co2_hold_s=90&pm25_hold_s=240&cycle_s=-600&temp_offset=2.5",
         &s));
 }
 
@@ -129,7 +151,7 @@ static void form_rejects_invalid_ranges(void)
     aq_settings_t s;
     CHECK(!aq_settings_from_form(
         "co2_moderate=850&co2_poor=1100&pm25_moderate=12&pm25_poor=30"
-        "&cycle_s=60&temp_offset=2.5",
+        "&co2_hold_s=90&pm25_hold_s=240&cycle_s=60&temp_offset=2.5",
         &s));
 }
 
@@ -144,7 +166,9 @@ static void custom_threshold_applies(void)
     aq_engine_on_co2(&e, 1000, 0);
     CHECK(aq_engine_evaluate(&e, 0).level == AQ_MODERATE);
     aq_engine_on_co2(&e, 1200, 0);
-    CHECK(aq_engine_evaluate(&e, 0).level == AQ_POOR);
+    aq_engine_on_pm25(&e, 0, 120000);
+    aq_engine_on_co2(&e, 1200, 120000);
+    CHECK(aq_engine_evaluate(&e, 120000).level == AQ_POOR);
 }
 
 static void alert_clears_below_the_custom_moderate_level(void)
@@ -156,13 +180,13 @@ static void alert_clears_below_the_custom_moderate_level(void)
     aq_engine_set_settings(&e, &s, 0);
     aq_engine_on_pm25(&e, 0, 0);
     aq_engine_on_co2(&e, 1000, 0);
-    aq_engine_on_pm25(&e, 0, 300000);
-    aq_engine_on_co2(&e, 1000, 300000);
-    CHECK(aq_engine_evaluate(&e, 300000).ventilate_alert);
-    aq_engine_on_co2(&e, 700, 300001);
-    CHECK(aq_engine_evaluate(&e, 300001).ventilate_alert);
-    aq_engine_on_co2(&e, 699, 300002);
-    CHECK(!aq_engine_evaluate(&e, 300002).ventilate_alert);
+    aq_engine_on_pm25(&e, 0, 120000);
+    aq_engine_on_co2(&e, 1000, 120000);
+    CHECK(aq_engine_evaluate(&e, 120000).ventilate_alert);
+    aq_engine_on_co2(&e, 700, 120001);
+    CHECK(aq_engine_evaluate(&e, 120001).ventilate_alert);
+    aq_engine_on_co2(&e, 699, 120002);
+    CHECK(!aq_engine_evaluate(&e, 120002).ventilate_alert);
 }
 
 static void stale_limit_follows_cycle(void)
@@ -187,13 +211,13 @@ static void threshold_change_restarts_pending_timer(void)
     aq_engine_on_pm25(&e, 0, 0);
     aq_engine_on_co2(&e, 1100, 0);
     s.co2_poor_ppm = 1200;
-    aq_engine_set_settings(&e, &s, 295000);
-    aq_engine_on_pm25(&e, 0, 300000);
-    aq_engine_on_co2(&e, 1300, 300000);
-    CHECK(!aq_engine_evaluate(&e, 300000).ventilate_alert);
-    aq_engine_on_pm25(&e, 0, 600000);
-    aq_engine_on_co2(&e, 1300, 600000);
-    CHECK(aq_engine_evaluate(&e, 600000).ventilate_alert);
+    aq_engine_set_settings(&e, &s, 115000);
+    aq_engine_on_pm25(&e, 0, 120000);
+    aq_engine_on_co2(&e, 1300, 120000);
+    CHECK(!aq_engine_evaluate(&e, 120000).ventilate_alert);
+    aq_engine_on_pm25(&e, 0, 240000);
+    aq_engine_on_co2(&e, 1300, 240000);
+    CHECK(aq_engine_evaluate(&e, 240000).ventilate_alert);
 }
 
 static void unrelated_change_keeps_pending_timer(void)
@@ -204,10 +228,10 @@ static void unrelated_change_keeps_pending_timer(void)
     aq_engine_on_pm25(&e, 0, 0);
     aq_engine_on_co2(&e, 1100, 0);
     s.pm25_poor = 40;
-    aq_engine_set_settings(&e, &s, 295000);
-    aq_engine_on_pm25(&e, 0, 300000);
-    aq_engine_on_co2(&e, 1100, 300000);
-    CHECK(aq_engine_evaluate(&e, 300000).ventilate_alert);
+    aq_engine_set_settings(&e, &s, 115000);
+    aq_engine_on_pm25(&e, 0, 120000);
+    aq_engine_on_co2(&e, 1100, 120000);
+    CHECK(aq_engine_evaluate(&e, 120000).ventilate_alert);
 }
 
 static void threshold_change_keeps_active_alert(void)
@@ -217,11 +241,11 @@ static void threshold_change_keeps_active_alert(void)
     aq_engine_init(&e, 0);
     aq_engine_on_pm25(&e, 0, 0);
     aq_engine_on_co2(&e, 1100, 0);
-    aq_engine_on_pm25(&e, 0, 300000);
-    aq_engine_on_co2(&e, 1100, 300000);
+    aq_engine_on_pm25(&e, 0, 120000);
+    aq_engine_on_co2(&e, 1100, 120000);
     s.co2_poor_ppm = 1200;
-    aq_engine_set_settings(&e, &s, 300000);
-    CHECK(aq_engine_evaluate(&e, 300000).ventilate_alert);
+    aq_engine_set_settings(&e, &s, 120000);
+    CHECK(aq_engine_evaluate(&e, 120000).ventilate_alert);
 }
 
 static void shorter_cycle_does_not_fault_a_healthy_sensor(void)
@@ -264,6 +288,7 @@ int main(void)
     RUN_TEST(wake_follows_the_current_cycle);
     RUN_TEST(defaults_match_the_spec);
     RUN_TEST(rejects_cycle_out_of_range);
+    RUN_TEST(rejects_hold_out_of_range);
     RUN_TEST(rejects_thresholds_out_of_order);
     RUN_TEST(rejects_values_out_of_range);
     RUN_TEST(rejects_not_a_number);

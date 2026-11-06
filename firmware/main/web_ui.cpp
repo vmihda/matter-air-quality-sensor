@@ -176,7 +176,7 @@ static esp_err_t handle_status(httpd_req_t *req)
         json.data(), json.size(),
         "{\"level\":\"%s\",\"co2\":%s,\"pm1\":%s,\"pm25\":%s,\"pm10\":%s,\"voc\":%s,\"voc_warming\":%s,\"temp\":%s,\"rh\":%s,\"ventilate\":%s,\"dust\":%s,\"fault\":%s,"
         "\"version\":\"%s\",\"settings\":{\"co2_moderate\":%.0f,\"co2_poor\":%.0f,"
-        "\"pm25_moderate\":%.0f,\"pm25_poor\":%.0f,\"cycle_s\":%" PRIu32
+        "\"pm25_moderate\":%.0f,\"pm25_poor\":%.0f,\"co2_hold_s\":%" PRIu32 ",\"pm25_hold_s\":%" PRIu32 ",\"cycle_s\":%" PRIu32
         ",\"temp_offset\":%.1f}}",
         level_name(status.output.level), co2.data(), pm1.data(), pm25.data(), pm10.data(), voc.data(),
         status.tvoc_warming_up ? "true" : "false", temperature.data(), humidity.data(),
@@ -184,7 +184,7 @@ static esp_err_t handle_status(httpd_req_t *req)
         status.output.fault_alert ? "true" : "false", esp_app_get_description()->version,
         static_cast<double>(settings.co2_moderate_ppm), static_cast<double>(settings.co2_poor_ppm),
         static_cast<double>(settings.pm25_moderate), static_cast<double>(settings.pm25_poor),
-        settings.pms_cycle_s,
+        settings.co2_hold_s, settings.pm25_hold_s, settings.pms_cycle_s,
         static_cast<double>(settings.temp_offset_c));
     if (length <= 0 || static_cast<size_t>(length) >= json.size()) {
         return send_error(req, HTTPD_500, "Помилка пристрою");

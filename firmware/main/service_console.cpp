@@ -49,6 +49,7 @@ static int command_settings(int, char **)
                 static_cast<double>(s.co2_poor_ppm));
     std::printf("pm25: moderate %.0f, poor %.0f ug/m3\n", static_cast<double>(s.pm25_moderate),
                 static_cast<double>(s.pm25_poor));
+    std::printf("hold: co2 %" PRIu32 " s, pm25 %" PRIu32 " s\n", s.co2_hold_s, s.pm25_hold_s);
     std::printf("pm25 cycle: %" PRIu32 " s, temperature offset: %.1f C\n", s.pms_cycle_s,
                 static_cast<double>(s.temp_offset_c));
     return 0;

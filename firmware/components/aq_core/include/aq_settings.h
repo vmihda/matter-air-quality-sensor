@@ -13,6 +13,8 @@ typedef struct {
     float co2_poor_ppm;
     float pm25_moderate;
     float pm25_poor;
+    uint32_t co2_hold_s;
+    uint32_t pm25_hold_s;
     uint32_t pms_cycle_s;
     float temp_offset_c;
 } aq_settings_t;

@@ -12,6 +12,8 @@
 #define PM25_MAX_UGM3 1000.0f
 #define TEMP_OFFSET_MIN_C 0.0f
 #define TEMP_OFFSET_MAX_C 20.0f
+#define HOLD_MIN_S 10u
+#define HOLD_MAX_S 3600u
 #define CYCLE_MIN_S 120u
 #define CYCLE_MAX_S 3600u
 #define VALUE_BUFFER_SIZE 16
@@ -29,6 +31,8 @@ static const field_t FIELDS[] = {
     {"co2_poor", offsetof(aq_settings_t, co2_poor_ppm), FIELD_FLOAT},
     {"pm25_moderate", offsetof(aq_settings_t, pm25_moderate), FIELD_FLOAT},
     {"pm25_poor", offsetof(aq_settings_t, pm25_poor), FIELD_FLOAT},
+    {"co2_hold_s", offsetof(aq_settings_t, co2_hold_s), FIELD_UINT},
+    {"pm25_hold_s", offsetof(aq_settings_t, pm25_hold_s), FIELD_UINT},
     {"cycle_s", offsetof(aq_settings_t, pms_cycle_s), FIELD_UINT},
     {"temp_offset", offsetof(aq_settings_t, temp_offset_c), FIELD_FLOAT},
 };
@@ -86,6 +90,8 @@ void aq_settings_defaults(aq_settings_t *s)
     s->co2_poor_ppm = AQ_CO2_POOR_PPM;
     s->pm25_moderate = AQ_PM25_MODERATE_UGM3;
     s->pm25_poor = AQ_PM25_POOR_UGM3;
+    s->co2_hold_s = AQ_CO2_HOLD_S;
+    s->pm25_hold_s = AQ_PM25_HOLD_S;
     s->pms_cycle_s = AQ_PMS_CYCLE_MS / 1000u;
     s->temp_offset_c = AQ_TEMP_OFFSET_C;
 }
@@ -97,6 +103,8 @@ bool aq_settings_validate(const aq_settings_t *s)
            float_in_range(s->pm25_moderate, PM25_MIN_UGM3, PM25_MAX_UGM3) &&
            float_in_range(s->pm25_poor, s->pm25_moderate, PM25_MAX_UGM3) &&
            float_in_range(s->temp_offset_c, TEMP_OFFSET_MIN_C, TEMP_OFFSET_MAX_C) &&
+           uint_in_range(s->co2_hold_s, HOLD_MIN_S, HOLD_MAX_S) &&
+           uint_in_range(s->pm25_hold_s, HOLD_MIN_S, HOLD_MAX_S) &&
            uint_in_range(s->pms_cycle_s, CYCLE_MIN_S, CYCLE_MAX_S);
 }
 
