@@ -21,6 +21,10 @@
 #define STOP_DELAY_MS 500
 #define COMMAND_DELAY_MS 1
 
+// pdMS_TO_TICKS rounds down and a delay can end right after it starts, so two extra
+// ticks guarantee at least the requested time at any tick rate.
+#define WAIT_MS(ms) vTaskDelay(pdMS_TO_TICKS(ms) + 2)
+
 static const char *TAG = "scd41";
 
 static i2c_master_bus_handle_t s_bus;
@@ -35,7 +39,7 @@ static esp_err_t send_command(uint16_t command)
 static esp_err_t read_response(uint16_t command, uint8_t *response, size_t length)
 {
     ESP_RETURN_ON_ERROR(send_command(command), TAG, "command 0x%04X failed", command);
-    vTaskDelay(pdMS_TO_TICKS(COMMAND_DELAY_MS) + 1);
+    WAIT_MS(COMMAND_DELAY_MS);
     return i2c_master_receive(s_device, response, length, SCD41_TIMEOUT_MS);
 }
 
@@ -60,7 +64,7 @@ esp_err_t scd41_init(int sda_gpio, int scl_gpio)
 
     // The sensor keeps measuring across an MCU reset, and most commands need it idle.
     ESP_RETURN_ON_ERROR(send_command(CMD_STOP_PERIODIC), TAG, "no reply from SCD41, check wiring");
-    vTaskDelay(pdMS_TO_TICKS(STOP_DELAY_MS));
+    WAIT_MS(STOP_DELAY_MS);
     return ESP_OK;
 }
 
@@ -77,7 +81,7 @@ esp_err_t scd41_set_temp_offset(float offset_c)
     uint8_t bytes[5] = {CMD_SET_TEMP_OFFSET >> 8, CMD_SET_TEMP_OFFSET & 0xFF, word >> 8, word & 0xFF, 0};
     bytes[4] = scd4x_crc8(&bytes[2], 2);
     ESP_RETURN_ON_ERROR(i2c_master_transmit(s_device, bytes, sizeof(bytes), SCD41_TIMEOUT_MS), TAG, "offset write failed");
-    vTaskDelay(pdMS_TO_TICKS(COMMAND_DELAY_MS) + 1);
+    WAIT_MS(COMMAND_DELAY_MS);
     return ESP_OK;
 }
 
@@ -90,11 +94,11 @@ esp_err_t scd41_read(float *co2_ppm, float *temp_c, float *rh_pct)
 {
     uint8_t ready[3];
     ESP_RETURN_ON_ERROR(read_response(CMD_DATA_READY, ready, sizeof(ready)), TAG, "data ready failed");
-    if (scd4x_crc8(ready, 2) != ready[2]) {
+    bool data_ready = false;
+    if (!scd4x_decode_data_ready(ready, &data_ready)) {
         return ESP_ERR_INVALID_CRC;
     }
-    // The lower 11 bits are zero when no new measurement is available.
-    if ((((uint16_t)ready[0] << 8 | ready[1]) & 0x07FF) == 0) {
+    if (!data_ready) {
         return ESP_ERR_NOT_FOUND;
     }
 

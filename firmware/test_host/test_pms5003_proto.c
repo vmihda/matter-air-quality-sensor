@@ -69,6 +69,20 @@ static void resyncs_mid_frame(void)
     CHECK(value == 17);
 }
 
+static void recovers_frame_after_truncated_frame(void)
+{
+    pms_parser_t parser;
+    uint8_t truncated[FRAME_SIZE];
+    uint8_t complete[FRAME_SIZE];
+    uint16_t value = 0;
+    pms_parser_init(&parser);
+    build_frame(truncated, 11);
+    build_frame(complete, 29);
+    CHECK(feed_bytes(&parser, truncated, FRAME_SIZE / 2, &value) == 0);
+    CHECK(feed_bytes(&parser, complete, FRAME_SIZE, &value) == 1);
+    CHECK(value == 29);
+}
+
 static void ignores_false_header(void)
 {
     pms_parser_t parser;
@@ -131,6 +145,7 @@ int main(void)
     RUN_TEST(valid_frame);
     RUN_TEST(rejects_bad_checksum);
     RUN_TEST(resyncs_mid_frame);
+    RUN_TEST(recovers_frame_after_truncated_frame);
     RUN_TEST(ignores_false_header);
     RUN_TEST(rejects_bad_length);
     RUN_TEST(rejects_out_of_range);

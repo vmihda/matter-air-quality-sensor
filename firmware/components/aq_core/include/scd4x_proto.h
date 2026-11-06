@@ -16,6 +16,9 @@ bool scd4x_decode_measurement(const uint8_t raw[9], float *co2_ppm, float *temp_
 
 bool scd4x_decode_serial(const uint8_t raw[9], uint64_t *serial);
 
+// Returns false on a CRC error. The lower 11 status bits are zero when no new measurement is available.
+bool scd4x_decode_data_ready(const uint8_t raw[3], bool *ready);
+
 #ifdef __cplusplus
 }
 #endif

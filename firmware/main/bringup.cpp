@@ -17,7 +17,9 @@ static constexpr int PMS_SLEEP_TEST_LENGTH_CHECKS = 2;
 
 static void check_scd41()
 {
-    float co2, temperature, humidity;
+    float co2{};
+    float temperature{};
+    float humidity{};
     const esp_err_t err = scd41_read(&co2, &temperature, &humidity);
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "SCD41 CO2=%.0f ppm T=%.1f C RH=%.1f %%", co2, temperature, humidity);
@@ -28,7 +30,7 @@ static void check_scd41()
 
 static void check_pms5003()
 {
-    uint16_t pm25;
+    uint16_t pm25{};
     const esp_err_t err = pms5003_read(&pm25, PMS_READ_TIMEOUT_MS);
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "PMS5003 PM2.5=%u ug/m3", pm25);
@@ -40,9 +42,9 @@ static void check_pms5003()
 void bringup_run()
 {
     ESP_ERROR_CHECK(scd41_init(BOARD_PIN_SCD41_SDA, BOARD_PIN_SCD41_SCL));
-    uint64_t serial = 0;
+    uint64_t serial{};
     ESP_ERROR_CHECK(scd41_get_serial(&serial));
-    ESP_LOGI(TAG, "SCD41 serial=%012llX", (unsigned long long)serial);
+    ESP_LOGI(TAG, "SCD41 serial=%012llX", static_cast<unsigned long long>(serial));
     ESP_ERROR_CHECK(scd41_start());
 
     ESP_ERROR_CHECK(pms5003_init(BOARD_PMS_UART_NUM, BOARD_PIN_PMS_TX, BOARD_PIN_PMS_RX));

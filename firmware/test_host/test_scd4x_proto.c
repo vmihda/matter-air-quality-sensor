@@ -76,8 +76,45 @@ static void decode_serial_rejects_bad_crc(void)
     CHECK(!scd4x_decode_serial(raw, &serial));
 }
 
+static void build_data_ready(uint8_t raw[3], uint16_t status)
+{
+    raw[0] = status >> 8;
+    raw[1] = status & 0xFF;
+    raw[2] = scd4x_crc8(raw, 2);
+}
+
+static void data_ready_when_low_bits_set(void)
+{
+    uint8_t raw[3];
+    bool ready = false;
+    build_data_ready(raw, 0x8006);
+    CHECK(scd4x_decode_data_ready(raw, &ready));
+    CHECK(ready);
+}
+
+static void data_not_ready_when_low_bits_clear(void)
+{
+    uint8_t raw[3];
+    bool ready = true;
+    build_data_ready(raw, 0x8000);
+    CHECK(scd4x_decode_data_ready(raw, &ready));
+    CHECK(!ready);
+}
+
+static void data_ready_rejects_bad_crc(void)
+{
+    uint8_t raw[3];
+    bool ready = false;
+    build_data_ready(raw, 0x8006);
+    raw[2] ^= 0xFF;
+    CHECK(!scd4x_decode_data_ready(raw, &ready));
+}
+
 int main(void)
 {
+    RUN_TEST(data_ready_when_low_bits_set);
+    RUN_TEST(data_not_ready_when_low_bits_clear);
+    RUN_TEST(data_ready_rejects_bad_crc);
     RUN_TEST(crc8_datasheet_vector);
     RUN_TEST(decode_valid);
     RUN_TEST(decode_rejects_bad_crc);

@@ -5,7 +5,8 @@ project(aq_core_host_tests C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
-add_compile_options(-Wall -Wextra -Werror)
+add_compile_options(-Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -fno-sanitize-recover=all)
+add_link_options(-fsanitize=address,undefined)
 
 enable_testing()
 

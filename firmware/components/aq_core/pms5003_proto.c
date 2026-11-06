@@ -1,5 +1,8 @@
 #include "pms5003_proto.h"
 
+#include <stddef.h>
+#include <string.h>
+
 #define START_1 0x42
 #define START_2 0x4D
 #define FRAME_DATA_LENGTH 0x1C
@@ -59,6 +62,26 @@ static void build_sleep_mode_cmd(uint8_t out[7], uint8_t mode)
     out[6] = sum & 0xFF;
 }
 
+static void accept_byte(pms_parser_t *p, uint8_t byte)
+{
+    if (byte_fits_header(p->length, byte)) {
+        p->frame[p->length++] = byte;
+    } else {
+        restart_with(p, byte);
+    }
+}
+
+// A truncated frame swallows the start of the next one, so a real header may be inside the rejected bytes.
+static void rescan_rejected_frame(pms_parser_t *p)
+{
+    uint8_t rejected[PMS_FRAME_SIZE - 1];
+    memcpy(rejected, p->frame + 1, sizeof(rejected));
+    p->length = 0;
+    for (size_t i = 0; i < sizeof(rejected); i++) {
+        accept_byte(p, rejected[i]);
+    }
+}
+
 void pms_parser_init(pms_parser_t *p)
 {
     p->length = 0;
@@ -66,19 +89,17 @@ void pms_parser_init(pms_parser_t *p)
 
 bool pms_parser_feed(pms_parser_t *p, uint8_t byte, uint16_t *pm25_atm)
 {
-    if (!byte_fits_header(p->length, byte)) {
-        restart_with(p, byte);
+    accept_byte(p, byte);
+    if (p->length < PMS_FRAME_SIZE) {
         return false;
     }
-    p->frame[p->length++] = byte;
-    if (p->length < PMS_FRAME_SIZE) {
+
+    if (sum_bytes(p->frame, PMS_FRAME_SIZE - 2) != read_u16(p->frame + PMS_FRAME_SIZE - 2)) {
+        rescan_rejected_frame(p);
         return false;
     }
     p->length = 0;
 
-    if (sum_bytes(p->frame, PMS_FRAME_SIZE - 2) != read_u16(p->frame + PMS_FRAME_SIZE - 2)) {
-        return false;
-    }
     const uint16_t pm25 = read_u16(p->frame + PM25_ATMOSPHERIC_OFFSET);
     if (pm25 > PM25_MAX_UGM3) {
         return false;

@@ -40,13 +40,16 @@ static aq_level_t level_for(float value, float moderate, float poor)
     return value >= moderate ? AQ_MODERATE : AQ_GOOD;
 }
 
-static bool check_stale(aq_channel_t *channel, uint32_t stale_ms, uint64_t now_ms)
+static bool is_stale(const aq_channel_t *channel, uint32_t stale_ms, uint64_t now_ms)
 {
-    if (now_ms - channel->last_ms < stale_ms) {
-        return false;
+    return now_ms - channel->last_ms >= stale_ms;
+}
+
+static void reset_alert_if_stale(aq_channel_t *channel, bool stale)
+{
+    if (stale) {
+        memset(&channel->alert, 0, sizeof(channel->alert));
     }
-    memset(&channel->alert, 0, sizeof(channel->alert));
-    return true;
 }
 
 void aq_engine_init(aq_engine_t *e, uint64_t now_ms)
@@ -70,8 +73,10 @@ void aq_engine_on_pm25(aq_engine_t *e, float ugm3, uint64_t now_ms)
 
 aq_output_t aq_engine_evaluate(aq_engine_t *e, uint64_t now_ms)
 {
-    const bool co2_stale = check_stale(&e->co2, AQ_CO2_STALE_MS, now_ms);
-    const bool pm25_stale = check_stale(&e->pm25, AQ_PM25_STALE_MS, now_ms);
+    const bool co2_stale = is_stale(&e->co2, AQ_CO2_STALE_MS, now_ms);
+    const bool pm25_stale = is_stale(&e->pm25, AQ_PM25_STALE_MS, now_ms);
+    reset_alert_if_stale(&e->co2, co2_stale);
+    reset_alert_if_stale(&e->pm25, pm25_stale);
 
     aq_output_t out = {
         .level = AQ_UNKNOWN,

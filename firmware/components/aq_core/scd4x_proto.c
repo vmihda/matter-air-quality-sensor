@@ -45,3 +45,13 @@ bool scd4x_decode_serial(const uint8_t raw[9], uint64_t *serial)
     *serial = ((uint64_t)words[0] << 32) | ((uint64_t)words[1] << 16) | words[2];
     return true;
 }
+
+bool scd4x_decode_data_ready(const uint8_t raw[3], bool *ready)
+{
+    if (scd4x_crc8(raw, 2) != raw[2]) {
+        return false;
+    }
+    const uint16_t status = (uint16_t)((raw[0] << 8) | raw[1]);
+    *ready = (status & 0x07FF) != 0;
+    return true;
+}
