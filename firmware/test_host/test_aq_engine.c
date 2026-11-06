@@ -148,8 +148,10 @@ static void fault_after_pm25_stale(void)
     aq_engine_t e;
     aq_engine_init(&e, 0);
     feed(&e, 400, 35, 0);
-    aq_engine_on_co2(&e, 400, 300000);
-    aq_output_t out = aq_engine_evaluate(&e, 300000);
+    aq_engine_on_co2(&e, 400, 899999);
+    CHECK(!aq_engine_evaluate(&e, 899999).fault_open);
+    aq_engine_on_co2(&e, 400, 900000);
+    aq_output_t out = aq_engine_evaluate(&e, 900000);
     CHECK(out.fault_open);
     CHECK(!out.dust_open);
 }
@@ -159,8 +161,8 @@ static void other_alert_survives_single_sensor_fault(void)
     aq_engine_t e;
     aq_engine_init(&e, 0);
     feed(&e, 1000, 0, 0);
-    aq_engine_on_co2(&e, 1000, 300000);
-    aq_output_t out = aq_engine_evaluate(&e, 300000);
+    aq_engine_on_co2(&e, 1000, 900000);
+    aq_output_t out = aq_engine_evaluate(&e, 900000);
     CHECK(out.ventilate_open);
     CHECK(out.fault_open);
 }

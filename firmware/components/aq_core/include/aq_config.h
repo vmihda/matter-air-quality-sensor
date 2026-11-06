@@ -16,4 +16,4 @@
 
 // A sensor with no valid reading for this long is reported as failed.
 #define AQ_CO2_STALE_MS 60000u
-#define AQ_PM25_STALE_MS 300000u
+#define AQ_PM25_STALE_MS 900000u
