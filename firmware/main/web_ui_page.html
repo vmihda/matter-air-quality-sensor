@@ -93,7 +93,7 @@ function problem([name,,min,max]){
   if(raw===''||!Number.isFinite(v))return'Введіть число';
   if(v<min||v>max)return`Можна від ${min} до ${max}`;
   const poor=POOR_OF[name];
-  if(poor&&v>num(form[poor].value))return'Має бути не більше за поганий рівень';
+  if(poor&&form[poor].value.trim()!==''&&v>num(form[poor].value))return'Має бути не більше за поганий рівень';
   return'';
 }
 function showProblem(field){
@@ -104,7 +104,8 @@ function showProblem(field){
   return text;
 }
 const shown=f=>f[4]?+(loaded[f[0]]/f[4]).toFixed(2):loaded[f[0]];
-function fillForm(){for(const f of FIELDS){form[f[0]].value=shown(f);showProblem(f)}setDirty(false)}
+// Every value goes in first, because a field's check can read another field.
+function fillForm(){for(const f of FIELDS)form[f[0]].value=shown(f);FIELDS.forEach(showProblem);setDirty(false)}
 function setDirty(on){dirty=on;$('save').disabled=!on}
 // Whole thresholds and a tenth of a degree are what the device reports back, so nothing changes silently on a later save.
 function toSend(f){
