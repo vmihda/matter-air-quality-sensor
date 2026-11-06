@@ -224,7 +224,7 @@ ENS160_SENSOR = Box(
 ENS160_RETAINER_Z0 = ENS160_PCB.z1 - 1.5
 
 # Lid and snaps
-SNAP_WINDOW_Z = (19.8, 21.4)
+SNAP_WINDOW_Z = (17.8, 19.4)
 SNAP_WINDOWS = (
     Box(8.0, 18.0, INNER_Y1, OUTER_Y, *SNAP_WINDOW_Z),
     Box(30.0, 40.0, INNER_Y1, OUTER_Y, *SNAP_WINDOW_Z),
@@ -238,10 +238,9 @@ HOOK_PIVOT = ((INNER_Y0 - 0.4 + INNER_Y0 + LID_FRONT_GAP) / 2, sum(HOOK_Z) / 2)
 LID_FRONT_RELIEF = (2.6, 0.65)
 SNAP_THICKNESS = 1.0
 SNAP_BUMP = 0.75
-SNAP_LEAD_IN = 0.7
+SNAP_LEAD_IN = 0.85
 SNAP_OUTER_Y = INNER_Y1 - LID_FIT
 SNAP_BOTTOM_Z = SNAP_WINDOW_Z[0] - 0.8
-SNAP_LENGTH = BASE_Z - SNAP_BOTTOM_Z
 SNAP_TIP = (SNAP_OUTER_Y - SNAP_LEAD_IN, SNAP_BOTTOM_Z)
 SNAP_BUMP_TIP = (SNAP_OUTER_Y + SNAP_BUMP, SNAP_WINDOW_Z[0] + 1.0)
 LEFT_TONGUE_Y = (15.0, 35.0)
@@ -415,7 +414,7 @@ WIRES: tuple[Wire, ...] = (
     _scd41_wire("scd41_vcc", "3V3", -2.25, 68.3, _PASSAGE_Z[0], "3V3"),
     _scd41_wire("scd41_gnd", "GND", -0.75, 67.0, _PASSAGE_Z[1], "GND"),
     _scd41_wire("scd41_sda", "SDA", 0.75, 65.7, _PASSAGE_Z[2], "D4"),
-    _scd41_wire("scd41_scl", "SCL", 2.25, 64.4, _PASSAGE_Z[3], "D5"),
+    _scd41_wire("scd41_scl", "SCL", 2.25, 65.1, _PASSAGE_Z[3], "D5"),
     _ens160_wire("ens160_vin", "3V3", 62.9, _PASSAGE_Z[0], "3V3"),
     _ens160_wire("ens160_gnd", "GND", 61.6, _PASSAGE_Z[1], "GND"),
     _ens160_wire("ens160_sda", "SDA", 60.3, _PASSAGE_Z[2], "D4"),

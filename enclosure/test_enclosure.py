@@ -251,6 +251,19 @@ def test_placed_connector_fits_in_the_sensor_room(
     assert all(overlap(part, box.solid()) < EMPTY for part in envelopes.values())
 
 
+@pytest.mark.parametrize("name", sorted(enc.WIRE_CONNECTORS))
+def test_placed_connector_does_not_press_on_wires_of_the_other_sensor(name: str) -> None:
+    box = enc.WIRE_CONNECTORS[name].solid()
+    hits = [
+        wire.name
+        for wire in enc.WIRES
+        if not wire.name.startswith(name)
+        and overlap(reduce(lambda joined, part: joined.union(part), (b.solid() for b in enc.wire_segments(wire))), box)
+        >= EMPTY
+    ]
+    assert hits == []
+
+
 def test_placed_connectors_do_not_collide() -> None:
     first, second = enc.WIRE_CONNECTORS.values()
     assert overlap(first.solid(), second.solid()) < EMPTY
@@ -333,7 +346,7 @@ def position_when_crossing_the_rim(y: float, z: float) -> float:
     raise AssertionError("the point never reaches the rim")
 
 
-@pytest.mark.parametrize("degrees", [2, 5, 8, 10, 12])
+@pytest.mark.parametrize("degrees", [2, 5, 8, 10, 12, 14])
 def test_lid_front_clears_the_wall_while_it_closes(degrees: float, base: cq.Workplane, lid: cq.Workplane) -> None:
     front_half = enc.Box(-5, enc.OUTER_X + 5, -5, enc.OUTER_Y / 2, 15, 40).solid()
     assert overlap(tilted_lid(lid, degrees).intersect(front_half), base) < EMPTY
@@ -350,10 +363,16 @@ def test_rear_snap_tip_enters_the_base_without_catching_on_the_rim() -> None:
 
 
 def test_rear_snap_bending_strain_is_low_while_the_lid_closes() -> None:
-    # Cantilever strain 1.5 * t * deflection / L^2. The tab bends across print layers, so 2% is the limit.
+    # Cantilever strain 1.5 * t * deflection / L^2, with L from the root to the point that takes the load.
+    # The tab bends across print layers, so 2% is the limit.
     deflection = position_when_crossing_the_rim(*enc.SNAP_BUMP_TIP) - enc.INNER_Y1
-    strain = 1.5 * enc.SNAP_THICKNESS * deflection / enc.SNAP_LENGTH**2
+    root_to_contact = enc.BASE_Z - enc.SNAP_BUMP_TIP[1]
+    strain = 1.5 * enc.SNAP_THICKNESS * deflection / root_to_contact**2
     assert 0 < strain <= 0.02
+
+
+def test_rear_snap_engagement_in_the_wall_is_kept() -> None:
+    assert enc.SNAP_BUMP_TIP[0] - enc.INNER_Y1 >= 0.5
 
 
 def test_mesh_data_covers_printed_parts_and_components() -> None:
