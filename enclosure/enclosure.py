@@ -87,8 +87,6 @@ PARTITION_X = PMS_WALL_X0 + PARTITION_THICKNESS
 PARTITION_Y0 = 24.5
 PARTITION_Y1 = PARTITION_Y0 + PARTITION_THICKNESS
 BOARD_BAY_Y0 = PARTITION_Y1
-# Low in the partition, where the air is coldest, so the board heat does not reach the sensors.
-WIRE_PASSAGE = Box(PARTITION_X + 3.8, PARTITION_X + 11.8, PARTITION_Y0, PARTITION_Y1, FLOOR, FLOOR + 4.5)
 
 # XIAO ESP32-C6: USB towards the back wall
 XIAO_SIZE = (17.8, 21.0, 5.0)
@@ -163,6 +161,17 @@ ADAPTER_BOX = Box(
 )
 ADAPTER_FENCE_Z = FLOOR + 1.5
 
+# Wires. A 4-way wire-to-wire connector is about 10 x 4.5 mm and 12 mm long when mated.
+WIRE_RADIUS = 0.6
+WIRE_CONNECTOR_SIZE = (10.0, 4.5)
+WIRE_CONNECTOR_MATED = 12.0
+# Above the adapter so wires run straight on, and below the board, whose heat rises away from it.
+WIRE_PASSAGE = Box(
+    PARTITION_X + 3.8, PARTITION_X + 15.8,
+    PARTITION_Y0, PARTITION_Y1,
+    ADAPTER_BOX.z1 + 1.0, ADAPTER_BOX.z1 + 6.5,
+)
+
 # SCD41: stands on the floor, sensor towards the right wall
 SCD41_SIZE = (13.4, 21.6)
 SCD41_FRONT_DEPTH = 2.6
@@ -235,6 +244,23 @@ ADAPTER_PLUG_BOX = Box(
     FLOOR + 1.0, FLOOR + 1.0 + ADAPTER_PLUG[2],
 )
 PMS_CABLE_ROUTE = Box(PMS_PLUG.x1, ADAPTER_PLUG_BOX.x0, PMS_BOX.y1 + 1.5, INNER_Y1 - 1.0, FLOOR + 1.0, PMS_PLUG.z1 - 0.5)
+PMS_STOP_DEPTH = 1.2
+# Behind the PMS5003, under the rear snaps. The factory cable is longer than the route and folds here.
+PMS_CABLE_SLACK = Box(
+    INNER_X0 + 1.0, PMS_WALL_X0 + 2.0,
+    PMS_BOX.y1 + CLEARANCE + PMS_STOP_DEPTH, INNER_Y1 - 0.5,
+    FLOOR, SNAP_WINDOW_Z[0] - 1.3,
+)
+SENSOR_WIRE_ROOM = Box(
+    PARTITION_X, SCD41_PCB.x0 - SCD41_REAR_DEPTH,
+    ENS160_PCB.y1 + ENS160_REAR_DEPTH, PARTITION_Y0,
+    FLOOR, BASE_Z - PARTITION_TOP_GAP,
+)
+BOARD_WIRE_ROOM = Box(
+    ADAPTER_BOX.x0, ADAPTER_BOX.x1,
+    BOARD_BAY_Y0, INNER_Y1,
+    ADAPTER_BOX.z1, XIAO_SHELF_Z - XIAO_SHELF_DEPTH,
+)
 
 COMPONENT_BOXES: dict[str, Box] = {
     "pms5003": PMS_BOX,
@@ -276,6 +302,110 @@ def component_envelopes() -> dict[str, cq.Workplane]:
     return {name: box.solid() for name, box in COMPONENT_BOXES.items()}
 
 
+Point = tuple[float, float, float]
+
+
+@dataclass(frozen=True)
+class Wire:
+    name: str
+    color: str
+    points: tuple[Point, ...]
+    radius: float = WIRE_RADIUS
+
+
+def wire_segments(wire: Wire) -> list[Box]:
+    """Square boxes around an axis-aligned path. Only inner corners extend, so end points stay on their part."""
+    boxes: list[Box] = []
+    last = len(wire.points) - 2
+    r = wire.radius
+    for index, (start, end) in enumerate(zip(wire.points, wire.points[1:])):
+        if sum(a != b for a, b in zip(start, end)) != 1:
+            raise ValueError(f"{wire.name}: segment {index} is not along one axis")
+        spans = []
+        for a, b in zip(start, end):
+            low, high = min(a, b), max(a, b)
+            if a == b:
+                spans += [low - r, high + r]
+                continue
+            starts_at_corner, ends_at_corner = index > 0, index < last
+            low_is_corner = starts_at_corner if a < b else ends_at_corner
+            high_is_corner = ends_at_corner if a < b else starts_at_corner
+            spans += [low - (r if low_is_corner else 0), high + (r if high_is_corner else 0)]
+        boxes.append(Box(*spans))
+    return boxes
+
+
+def _xiao_pad(side_x: float, index_from_usb: int) -> tuple[float, float]:
+    """A pad on the board edge: seven per side, 2.54 mm apart, centered along the board."""
+    return side_x, XIAO_BOX.y1 - 2.88 - 2.54 * index_from_usb
+
+
+_LEFT_PADS_X = XIAO_BOX.x0 - WIRE_RADIUS
+_RIGHT_PADS_X = XIAO_BOX.x1 + WIRE_RADIUS
+_PAD_Z = XIAO_BOX.z0 + XIAO_PCB / 2
+# Standard XIAO order from the USB end: left D0..D6, right 5V, GND, 3V3, D10, D9, D8, D7.
+XIAO_PADS = {
+    "D4": _xiao_pad(_LEFT_PADS_X, 4),
+    "D5": _xiao_pad(_LEFT_PADS_X, 5),
+    "D6": _xiao_pad(_LEFT_PADS_X, 6),
+    "D7": _xiao_pad(_RIGHT_PADS_X, 6),
+    "5V": _xiao_pad(_RIGHT_PADS_X, 0),
+    "GND": _xiao_pad(_RIGHT_PADS_X, 1),
+    "3V3": _xiao_pad(_RIGHT_PADS_X, 2),
+}
+# Heights of the four sensor wires inside the passage.
+_PASSAGE_Z = tuple(WIRE_PASSAGE.z0 + 0.7 + 1.3 * i for i in range(4))
+_UNDER_BOARD_Z = XIAO_SHELF_Z - XIAO_SHELF_DEPTH - 1.4
+
+
+def _run_to_pad(x: float, z: float, pin: str) -> tuple[Point, ...]:
+    pad_x, pad_y = XIAO_PADS[pin]
+    return ((x, pad_y, z), (pad_x, pad_y, z), (pad_x, pad_y, _PAD_Z))
+
+
+def _scd41_wire(name: str, color: str, y_offset: float, x: float, z: float, pin: str) -> Wire:
+    start_x = SCD41_PCB.x0 - SCD41_REAR_DEPTH
+    y = SCD41_CENTER_Y + y_offset
+    top = SCD41_PCB.z1 - 1.6
+    return Wire(name, color, ((start_x, y, top), (x, y, top), (x, y, z), *_run_to_pad(x, z, pin)))
+
+
+def _ens160_wire(name: str, color: str, x: float, z: float, pin: str) -> Wire:
+    return Wire(name, color, ((x, ENS160_PCB.y1 + ENS160_REAR_DEPTH, z), *_run_to_pad(x, z, pin)))
+
+
+def _pms_wire(name: str, color: str, x: float, y: float, pin: str) -> Wire:
+    return Wire(name, color, ((x, y, ADAPTER_BOX.z1), (x, y, _UNDER_BOARD_Z), *_run_to_pad(x, _UNDER_BOARD_Z, pin)))
+
+
+# The harness. Exact wire order on each module is set by the real part; the room for it is what is checked here.
+WIRES: tuple[Wire, ...] = (
+    _scd41_wire("scd41_vcc", "#d93025", -2.25, 68.3, _PASSAGE_Z[0], "3V3"),
+    _scd41_wire("scd41_gnd", "#202124", -0.75, 67.0, _PASSAGE_Z[1], "GND"),
+    _scd41_wire("scd41_sda", "#f0b400", 0.75, 65.7, _PASSAGE_Z[2], "D4"),
+    _scd41_wire("scd41_scl", "#188038", 2.25, 64.4, _PASSAGE_Z[3], "D5"),
+    _ens160_wire("ens160_vin", "#d93025", 62.9, _PASSAGE_Z[0], "3V3"),
+    _ens160_wire("ens160_gnd", "#202124", 61.6, _PASSAGE_Z[1], "GND"),
+    _ens160_wire("ens160_sda", "#f0b400", 60.3, _PASSAGE_Z[2], "D4"),
+    _ens160_wire("ens160_scl", "#188038", 59.0, _PASSAGE_Z[3], "D5"),
+    _pms_wire("pms_5v", "#f57c00", 72.0, ADAPTER_BOX.y1 - 1.0, "5V"),
+    _pms_wire("pms_gnd", "#202124", 70.5, ADAPTER_BOX.y1 - 1.0, "GND"),
+    _pms_wire("pms_tx", "#1a73e8", 72.0, ADAPTER_BOX.y0 + 2.5, "D7"),
+    _pms_wire("pms_rx", "#8e24aa", 61.0, ADAPTER_BOX.y0 + 2.5, "D6"),
+    Wire(
+        "pms_cable",
+        "#6b7a75",
+        (
+            (PMS_PLUG.x1, 45.0, PMS_PLUG.z0 + 3.5),
+            (ADAPTER_PLUG_BOX.x0 - 2.6, 45.0, PMS_PLUG.z0 + 3.5),
+            (ADAPTER_PLUG_BOX.x0 - 2.6, 45.0, FLOOR + 3.5),
+            (ADAPTER_PLUG_BOX.x0, 45.0, FLOOR + 3.5),
+        ),
+        radius=1.5,
+    ),
+)
+
+
 def _spread(center: float, count: int) -> list[float]:
     """Positions of `count` slots centered on `center`."""
     return [center + SLOT_PITCH * (i - (count - 1) / 2) for i in range(count)]
@@ -309,6 +439,7 @@ def _pms_frame_and_seats() -> list[Box]:
     pms = PMS_BOX
     y0, y1 = INNER_Y0, INNER_Y0 + PMS_FRAME_DEPTH
     stop_y0 = pms.y1 + CLEARANCE
+    stop_y1 = stop_y0 + PMS_STOP_DEPTH
     stop_z1 = FLOOR + 12.0
     return [
         # Frame that seals the air face to the front wall, with a rib between the ports
@@ -321,8 +452,8 @@ def _pms_frame_and_seats() -> list[Box]:
         Box(pms.x0 + 3.5, pms.x0 + 6.5, pms.y0 + 1.5, pms.y1 - 1.5, FLOOR, pms.z0),
         Box(pms.x1 - 6.5, pms.x1 - 3.5, pms.y0 + 1.5, pms.y1 - 1.5, FLOOR, pms.z0),
         # Rear stops, clear of the connector
-        Box(pms.x0 + 2.5, pms.x0 + 12.5, stop_y0, stop_y0 + 1.2, FLOOR, stop_z1),
-        Box(pms.x0 + 17.5, pms.x0 + 25.5, stop_y0, stop_y0 + 1.2, FLOOR, stop_z1),
+        Box(pms.x0 + 2.5, pms.x0 + 12.5, stop_y0, stop_y1, FLOOR, stop_z1),
+        Box(pms.x0 + 17.5, pms.x0 + 25.5, stop_y0, stop_y1, FLOOR, stop_z1),
     ]
 
 
@@ -351,7 +482,7 @@ def _scd41_rails() -> list[Box]:
 
 
 def _ens160_seat() -> list[Box]:
-    """Side walls and short ribs only: the long edges of the module stay free for its contact row."""
+    """The module is held only at its short edges: the long ones stay free for the soldered contact row."""
     pcb = ENS160_PCB
     rib_y1 = pcb.y0 - CLEARANCE
     lip_y0 = pcb.y1 + CLEARANCE
@@ -359,8 +490,6 @@ def _ens160_seat() -> list[Box]:
     return [
         Box(PARTITION_X, pcb.x0 - CLEARANCE, INNER_Y0, lip_y1, FLOOR, pcb.z1),
         Box(pcb.x1 + CLEARANCE, pcb.x1 + CLEARANCE + ENS160_WALL, INNER_Y0, lip_y1, FLOOR, pcb.z1),
-        Box(pcb.x0 - CLEARANCE, pcb.x0 + RAIL, INNER_Y0, rib_y1, FLOOR, pcb.z1),
-        Box(pcb.x1 - RAIL, pcb.x1 + CLEARANCE, INNER_Y0, rib_y1, FLOOR, pcb.z1),
         Box(pcb.x0 + 1.1, pcb.x1 - 1.1, INNER_Y0, rib_y1, FLOOR, ENS160_RIB_Z1),
         Box(pcb.x0 + 1.1, pcb.x1 - 1.1, lip_y0, lip_y1, FLOOR, ENS160_RIB_Z1),
     ]
@@ -384,7 +513,7 @@ def _board_stops() -> list[Box]:
     return [
         Box(*x_span, *y_span, z0, z1)
         for x_span in (left, right)
-        for y_span in ((BOARD_BAY_Y0, board.y0 + 2.3), (board.y1 - 2.2, INNER_Y1))
+        for y_span in ((BOARD_BAY_Y0, board.y0 + 2.0), (board.y1 - 2.2, INNER_Y1))
     ]
 
 
@@ -569,6 +698,9 @@ def mesh_data() -> dict[str, dict]:
         "board_details": {
             name: [box.x0, box.x1, box.y0, box.y1, box.z0, box.z1] for name, box in XIAO_DETAILS.items()
         },
+        "wires": [
+            {"name": wire.name, "color": wire.color, "radius": wire.radius, "points": wire.points} for wire in WIRES
+        ],
     }
 
 

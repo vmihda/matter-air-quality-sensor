@@ -1,4 +1,5 @@
 """Geometry checks for the printed enclosure. All volumes are measured on the real solids."""
+from functools import reduce
 from itertools import combinations
 from pathlib import Path
 
@@ -166,16 +167,13 @@ def test_sensor_faces_openings_in_the_outer_wall(sensor: enc.Box, wall_axis: str
     ids=["scd41", "ens160"],
 )
 def test_sensor_is_walled_off_from_the_board(sensor: enc.Box, base: cq.Workplane) -> None:
-    # Above the wire passage the partition is continuous across the whole bay.
-    partition = enc.Box(
-        enc.PARTITION_X,
-        enc.INNER_X1,
-        enc.PARTITION_Y0,
-        enc.PARTITION_Y1,
-        enc.WIRE_PASSAGE.z1,
-        enc.BASE_Z - enc.PARTITION_TOP_GAP,
-    )
-    assert solid_in(base, partition) == pytest.approx(partition.volume, rel=1e-3)
+    # Above and below the wire passage the partition is continuous across the whole bay.
+    for z0, z1 in (
+        (enc.FLOOR, enc.WIRE_PASSAGE.z0),
+        (enc.WIRE_PASSAGE.z1, enc.BASE_Z - enc.PARTITION_TOP_GAP),
+    ):
+        partition = enc.Box(enc.PARTITION_X, enc.INNER_X1, enc.PARTITION_Y0, enc.PARTITION_Y1, z0, z1)
+        assert solid_in(base, partition) == pytest.approx(partition.volume, rel=1e-3)
     assert sensor.y1 <= enc.PARTITION_Y0
 
 
@@ -190,14 +188,69 @@ def test_scd41_wall_is_away_from_the_pms_ports() -> None:
     assert enc.SCD41_SENSOR.x0 - enc.PMS_FAN_PORT.x1 >= 25
 
 
-def test_wires_can_leave_the_cold_chamber(base: cq.Workplane) -> None:
-    assert solid_in(base, enc.WIRE_PASSAGE) < EMPTY
-    assert enc.WIRE_PASSAGE.z1 <= enc.FLOOR + 6
+def test_wire_passage_is_open_and_lets_a_connector_through(base: cq.Workplane) -> None:
+    passage = enc.WIRE_PASSAGE
+    assert solid_in(base, passage) < EMPTY
+    assert passage.x1 - passage.x0 >= enc.WIRE_CONNECTOR_SIZE[0] + 1
+    assert passage.z1 - passage.z0 >= enc.WIRE_CONNECTOR_SIZE[1] + 0.5
 
 
-def test_pms_cable_has_a_free_route_to_the_adapter(base: cq.Workplane, lid: cq.Workplane) -> None:
-    assert solid_in(base, enc.PMS_CABLE_ROUTE) < EMPTY
-    assert solid_in(lid, enc.PMS_CABLE_ROUTE) < EMPTY
+def test_wire_passage_runs_above_the_adapter_and_below_the_board() -> None:
+    assert enc.WIRE_PASSAGE.z0 >= enc.ADAPTER_BOX.z1
+    assert enc.WIRE_PASSAGE.z1 <= enc.XIAO_SHELF_Z - enc.XIAO_SHELF_DEPTH
+
+
+def test_wire_room_is_clear(base: cq.Workplane, lid: cq.Workplane, envelopes: dict[str, cq.Workplane]) -> None:
+    for room in (enc.SENSOR_WIRE_ROOM, enc.BOARD_WIRE_ROOM, enc.PMS_CABLE_ROUTE, enc.PMS_CABLE_SLACK):
+        assert solid_in(base, room) < EMPTY
+        assert solid_in(lid, room) < EMPTY
+    for room in (enc.SENSOR_WIRE_ROOM, enc.BOARD_WIRE_ROOM):
+        for name, envelope in envelopes.items():
+            assert overlap(envelope, room.solid()) < EMPTY, name
+
+
+def test_pms_cable_slack_fits_a_long_factory_cable() -> None:
+    # 200 mm of 8-way flat cable, about 10 x 1 mm, with half as much again for folding.
+    assert enc.PMS_CABLE_SLACK.volume >= 1.5 * 200 * 10 * 1
+
+
+def test_sensor_room_holds_both_connectors() -> None:
+    length, width, height = enc.WIRE_CONNECTOR_MATED, *enc.WIRE_CONNECTOR_SIZE
+    assert enc.SENSOR_WIRE_ROOM.volume >= 3 * 2 * length * width * height
+
+
+@pytest.mark.parametrize(
+    "edge",
+    [
+        enc.Box(enc.ENS160_PCB.x0, enc.ENS160_PCB.x0 + 2.6, enc.WALL, enc.ENS160_PCB.y0, enc.ENS160_RIB_Z1, enc.ENS160_RETAINER_Z0),
+        enc.Box(enc.ENS160_PCB.x1 - 2.6, enc.ENS160_PCB.x1, enc.WALL, enc.ENS160_PCB.y0, enc.ENS160_RIB_Z1, enc.ENS160_RETAINER_Z0),
+    ],
+    ids=["left", "right"],
+)
+def test_ens160_contact_row_edge_is_free_on_the_solder_side(edge: enc.Box, base: cq.Workplane) -> None:
+    assert solid_in(base, edge) < EMPTY
+
+
+@pytest.mark.parametrize("wire", enc.WIRES, ids=lambda wire: wire.name)
+def test_wire_does_not_pass_through_plastic_or_parts(
+    wire: enc.Wire, base: cq.Workplane, lid: cq.Workplane, envelopes: dict[str, cq.Workplane]
+) -> None:
+    path = reduce(lambda joined, box: joined.union(box), (box.solid() for box in enc.wire_segments(wire)))
+    hits = {
+        name: round(volume, 3)
+        for name, part in {"base": base, "lid": lid, **envelopes}.items()
+        if (volume := overlap(part, path)) >= EMPTY
+    }
+    assert hits == {}
+
+
+def test_every_connection_from_the_wiring_table_has_a_wire() -> None:
+    names = {wire.name for wire in enc.WIRES}
+    assert {
+        "scd41_vcc", "scd41_gnd", "scd41_sda", "scd41_scl",
+        "ens160_vin", "ens160_gnd", "ens160_sda", "ens160_scl",
+        "pms_5v", "pms_gnd", "pms_tx", "pms_rx", "pms_cable",
+    } <= names
 
 
 def test_rear_snap_can_be_released_from_outside(base: cq.Workplane) -> None:
@@ -211,6 +264,7 @@ def test_mesh_data_covers_printed_parts_and_components() -> None:
     assert data["parts"].keys() == {"base", "lid"}
     assert data["components"].keys() == enc.COMPONENT_BOXES.keys()
     assert data["board_details"].keys() == enc.XIAO_DETAILS.keys()
+    assert [wire["name"] for wire in data["wires"]] == [wire.name for wire in enc.WIRES]
     for mesh in data["parts"].values():
         assert len(mesh["vertices"]) % 3 == 0
         assert len(mesh["triangles"]) % 3 == 0
