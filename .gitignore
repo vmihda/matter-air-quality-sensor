@@ -16,3 +16,6 @@ sdkconfig.s3
 docs/
 research_matter_sensors/
 .vscode/
+
+# Per-unit firmware settings such as the device page password
+firmware/sdkconfig.local
