@@ -11,3 +11,8 @@ __pycache__/
 .DS_Store
 build-*/
 sdkconfig.s3
+
+# Project notes kept outside the public repository
+docs/
+research_matter_sensors/
+.vscode/

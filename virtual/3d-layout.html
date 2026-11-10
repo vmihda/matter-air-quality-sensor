@@ -1,0 +1,421 @@
+<title>Корпус датчика повітря</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout concept: a workbench viewport beside a parts sheet, sized in real millimetres. */
+:root {
+  --bg: #eef1ee; --panel: #fbfcfa; --fg: #17211e; --muted: #5a6863; --line: #ccd5d0;
+  --accent: #0b6b5d; --accent-fg: #ffffff; --good: #14704a; --warn: #8a5a00; --stage: #dfe5e1; --stage-fg: #4d5a55;
+  --font: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #101614; --panel: #18211e; --fg: #e6ece9; --muted: #9aa8a2; --line: #2e3b36;
+  --accent: #46c2a8; --accent-fg: #06201a; --good: #5fd19b; --warn: #e6b45c; --stage: #0b100e; --stage-fg: #9aa8a2; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #101614; --panel: #18211e; --fg: #e6ece9; --muted: #9aa8a2; --line: #2e3b36;
+  --accent: #46c2a8; --accent-fg: #06201a; --good: #5fd19b; --warn: #e6b45c; --stage: #0b100e; --stage-fg: #9aa8a2; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); line-height: 1.45; }
+.page { padding-block: 20px 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1320px; margin: 0 auto; display: grid; gap: 16px; }
+h1 { font-size: 1.6rem; margin: 0; text-wrap: balance; }
+h2 { font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; font-weight: 700; }
+.lead { margin: 4px 0 0; color: var(--muted); max-width: 70ch; }
+.work { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .work { grid-template-columns: minmax(0, 1fr); } }
+.viewer { display: grid; gap: 8px; min-width: 0; }
+.stage { position: relative; background: var(--stage); border: 1px solid var(--line); border-radius: 8px; height: min(66vh, 600px); min-height: 340px; overflow: hidden; touch-action: none; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+.tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tools .gap { width: 8px; }
+button { font: 500 0.82rem var(--font); color: var(--fg); background: var(--panel); border: 1px solid var(--line); padding: 6px 10px; border-radius: 6px; cursor: pointer; min-height: 32px; }
+button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.section-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 0.84rem; }
+.section-row input { flex: 1 1 160px; min-width: 0; accent-color: var(--accent); }
+.section-row output { font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 4.5em; }
+.label { position: absolute; transform: translate(-50%, -50%); font: 600 0.72rem var(--mono); color: #fff; background: rgba(10, 20, 17, 0.78); padding: 2px 6px; border-radius: 4px; pointer-events: none; white-space: nowrap; }
+.hint { position: absolute; right: 10px; bottom: 8px; font-size: 0.75rem; color: var(--stage-fg); }
+.side { display: grid; gap: 16px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+.card p { margin: 0; font-size: 0.9rem; }
+.card p + p { margin-top: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+td, th { text-align: left; padding: 5px 6px 5px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.src-doc { color: var(--good); } .src-est { color: var(--warn); }
+.scroll { overflow-x: auto; }
+.checks { display: grid; gap: 4px; font-size: 0.86rem; margin: 0; padding: 0; list-style: none; }
+.checks li { display: flex; gap: 8px; }
+.checks b { color: var(--good); font-family: var(--mono); }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.wire-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 10px; padding: 0; list-style: none; font-size: 0.82rem; }
+.wire-key li { display: flex; align-items: center; gap: 6px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--line); }
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 0.9rem; }
+#fallback { padding: 24px; }
+</style>
+
+<div class="page">
+  <header>
+    <h1>Корпус датчика повітря</h1>
+    <p class="lead">Готова модель для друку, 80 × 50 × 30 мм. Деталі показано блоками за розмірами з документації та оголошень. Коли вони прийдуть, розміри треба перевірити лінійкою.</p>
+  </header>
+
+  <div class="work">
+    <div class="viewer">
+      <div class="tools" role="group" aria-label="Що показувати">
+        <button id="tLidShow" aria-pressed="true">Кришка</button>
+        <button id="tLid" aria-pressed="false">Закрити</button>
+        <button id="tBase" aria-pressed="true">Основа</button>
+        <button id="tParts" aria-pressed="true">Деталі</button>
+        <button id="tWires" aria-pressed="true">Дроти</button>
+        <button id="tAids" aria-pressed="true">Стрічка й термоусадка</button>
+        <button id="tLabels" aria-pressed="true">Підписи</button>
+        <span class="gap"></span>
+        <button id="vIso">3D</button>
+        <button id="vIsoBack">3D ззаду</button>
+        <button id="vFront">Спереду</button>
+        <button id="vRight">Праворуч</button>
+        <button id="vBack">Ззаду</button>
+        <button id="vTop">Згори</button>
+      </div>
+      <div class="stage" id="stage">
+        <span class="hint">Обертання: перетягування. Масштаб: коліщатко</span>
+      </div>
+      <div class="section-row" role="group" aria-label="Розріз">
+        <span>Розріз</span>
+        <button id="cutNone" aria-pressed="true">Немає</button>
+        <button id="cutZ" aria-pressed="false">За висотою</button>
+        <button id="cutY" aria-pressed="false">За глибиною</button>
+        <button id="cutX" aria-pressed="false">За довжиною</button>
+        <input id="cutPos" type="range" min="0" max="100" value="50" step="0.5" aria-label="Положення розрізу" disabled>
+        <output id="cutOut" for="cutPos"></output>
+      </div>
+    </div>
+
+    <div class="side">
+      <section class="card" aria-labelledby="hChecks">
+        <h2 id="hChecks">Перевірено на моделі</h2>
+        <ul class="checks">
+          <li><b>OK</b><span>Деталі не торкаються пластику й одна одної</span></li>
+          <li><b>OK</b><span>Отвори для PMS5003 не менші за його порти й розділені ребром</span></li>
+          <li><b>OK</b><span>SCD41 і ENS160 відділені від плати перегородкою й дивляться в прорізи</span></li>
+          <li><b>OK</b><span>USB, BOOT і RESET доступні ззовні, світло діода виходить крізь вікна в кришці</span></li>
+          <li><b>OK</b><span>Плата продувається: приплив знизу збоку, вихід крізь кришку</span></li>
+          <li><b>OK</b><span>Усі дроти прокладено, вони не зачіпають пластик і деталі</span></li>
+          <li><b>OK</b><span>Є місце для роз’ємів і запасу кабелю PMS5003</span></li>
+          <li><b>OK</b><span>Основа й кришка друкуються суцільними деталями й не стикаються</span></li>
+        </ul>
+      </section>
+      <section class="card" aria-labelledby="hParts">
+        <h2 id="hParts">Розміри деталей</h2>
+        <div class="scroll"><table>
+          <thead><tr><th>Деталь</th><th>мм</th><th>Джерело</th></tr></thead>
+          <tbody>
+            <tr><td>PMS5003</td><td class="num">50 × 38 × 20,9</td><td class="src-doc">креслення</td></tr>
+            <tr><td>XIAO ESP32-C6</td><td class="num">21 × 17,8 × 5</td><td class="src-est">товщина: оцінка</td></tr>
+            <tr><td>BOOT, RESET, світлодіод</td><td class="num">біля USB</td><td class="src-est">оцінка</td></tr>
+            <tr><td>SCD41</td><td class="num">13,4 × 21,6 × 8,2</td><td class="src-est">оголошення</td></tr>
+            <tr><td>ENS160, синій</td><td class="num">24 × 19 × 6,5</td><td class="src-est">оголошення, товщина: оцінка</td></tr>
+            <tr><td>Перехідник G5</td><td class="num">20 × 16 × 6</td><td class="src-est">оцінка</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="notes">
+    <section class="card" aria-labelledby="hWires">
+      <h2 id="hWires">Як лежать дроти</h2>
+      <ul class="wire-key">
+        <li><span class="dot" style="background:#d93025"></span>3V3</li>
+        <li><span class="dot" style="background:#f57c00"></span>5V</li>
+        <li><span class="dot" style="background:#202124"></span>GND</li>
+        <li><span class="dot" style="background:#f0b400"></span>SDA</li>
+        <li><span class="dot" style="background:#188038"></span>SCL</li>
+        <li><span class="dot" style="background:#1a73e8"></span>TX</li>
+        <li><span class="dot" style="background:#8e24aa"></span>RX</li>
+        <li><span class="dot" style="background:#6b7a75"></span>кабель PMS5003</li>
+      </ul>
+      <p>Від SCD41 і ENS160 іде по 4 дроти крізь отвір 12 × 5,5 мм у перегородці. Далі вони йдуть над перехідником, під платою, і піднімаються до контактів по її боках. Роз’єми для заміни лежать у камері сенсорів.</p>
+      <p>Кабель PMS5003 іде за датчиком до перехідника, надлишок складається там само, нижче за защіпки. Від перехідника до плати 4 дроти.</p>
+      <p><span class="dot" style="background:#e0218a;display:inline-block"></span> Стрічка: рамка перед портами PMS5003, два притискачі на його верхній грані й отвір з боку сенсорів. Рамку видно, якщо приховати деталі.</p>
+      <p><span class="dot" style="background:#18c6c6;display:inline-block"></span> Термоусадка: чотири скрутки під платою, де до контактів 3V3, GND, D4 і D5 сходяться дроти. Кольори на моделі умовні.</p>
+    </section>
+    <section class="card" aria-labelledby="hOrder">
+      <h2 id="hOrder">Порядок збирання</h2>
+      <ol class="steps">
+        <li>Припаяти короткі дроти до плати й модулів, надіти роз’єми.</li>
+        <li>Наклеїти спінену стрічку на рамку перед PMS5003, обов’язково й на середнє ребро. Під’єднати кабель до датчика й опустити його в корпус.</li>
+        <li>Покласти перехідник на дно, під’єднати кабель, скласти надлишок.</li>
+        <li>Завести дроти плати крізь отвір у камеру, роз’ємом уперед, і закрити отвір шматочком стрічки.</li>
+        <li>Завести USB в отвір під кутом і опустити плату на полиці.</li>
+        <li>Вставити SCD41 і ENS160 згори на їхні місця, з’єднати роз’єми.</li>
+        <li>Наклеїти стрічку на два притискачі кришки. Нахилити її приблизно на 14°, завести передні гачки в пази й опустити задню частину до клацання.</li>
+      </ol>
+    </section>
+    <section class="card" aria-labelledby="hAir">
+      <h2 id="hAir">Куди йде повітря</h2>
+      <p>Спереду дві решітки PMS5003, між ними ребро зі спіненою стрічкою, щоб повітря не йшло по колу. Третя решітка спереду для ENS160, праворуч прорізи для SCD41.</p>
+      <p>Сенсори в холодній камері, відділені від плати й від PMS5003. Плата гріє повітря вгору: приплив знизу праворуч, вихід крізь вікна в кришці.</p>
+    </section>
+    <section class="card" aria-labelledby="hBuild">
+      <h2 id="hBuild">Збирання</h2>
+      <p>PMS5003 стоїть на ребрах і притиснутий кришкою через спінену стрічку 1 мм. Така сама стрічка ущільнює рамку навколо його портів. SCD41 і ENS160 вставляються згори в пази. Плата лягає на полиці, USB у задню стінку.</p>
+      <p>Кришка заводиться гачками спереду й защіпається ззаду. Відкривається тонким предметом крізь два вікна в задній стінці. Гвинти не потрібні.</p>
+      <p>Світлодіод і кнопки намальовано приблизно: виробник не публікує їхнього положення. Тому два вікна в кришці відкривають усю смугу плати поруч із роз’ємом. Світло видно згори й під кутом, строго збоку його не видно.</p>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="enclosure-mesh.js"></script>
+<script>
+const OUTER = { x: 80, y: 50, z: 30 };
+const LID_LIFT = 42;
+const PART_STYLE = {
+  pms5003: { color: 0x2f79b5, label: 'PMS5003' },
+  pms5003_plug: { color: 0x1d4f78 },
+  pcb: { color: 0x2a2d30 },
+  shield: { color: 0x9aa3a8, label: 'XIAO ESP32-C6' },
+  usb: { color: 0xe3e7ea },
+  led: { color: 0xffc400, glow: true, label: 'Світлодіод', lift: 7 },
+  boot: { color: 0x3f7fd6, label: 'BOOT', lift: 3 },
+  reset: { color: 0x3f7fd6, label: 'RESET', lift: 3 },
+  scd41: { color: 0xe9e6d8 },
+  ens160: { color: 0xe9e6d8 },
+  adapter: { color: 0x1f6b3a, label: 'Перехідник' },
+  adapter_plug: { color: 0x174f2b },
+  scd41_pcb: { color: 0x7a4bb0, label: 'SCD41' },
+  scd41_front: { color: 0xc9ced1 },
+  scd41_rear: { color: 0x5b3786 },
+  ens160_pcb: { color: 0xc77f12, label: 'ENS160' },
+  ens160_front: { color: 0xe8d29a },
+  ens160_rear: { color: 0x96600d },
+};
+
+// Project axes have z up; three.js has y up. This rotation keeps triangle winding intact.
+const toWorld = (x, y, z) => new THREE.Vector3(x - OUTER.x / 2, z - OUTER.z / 2, -(y - OUTER.y / 2));
+
+function startScene() {
+  const stage = document.getElementById('stage');
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.localClippingEnabled = true;
+  stage.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(32, 1, 1, 2000);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a938f, 0.62));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.5);
+  sun.position.set(70, 140, 90);
+  scene.add(sun);
+
+  const clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1000);
+  const clipping = [clipPlane];
+
+  const printedMesh = (data, color) => {
+    const geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(data.vertices.length);
+    for (let i = 0; i < data.vertices.length; i += 3) {
+      const p = toWorld(data.vertices[i], data.vertices[i + 1], data.vertices[i + 2]);
+      positions.set([p.x, p.y, p.z], i);
+    }
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setIndex(data.triangles);
+    const flat = geometry.toNonIndexed();
+    flat.computeVertexNormals();
+    const group = new THREE.Group();
+    group.add(new THREE.Mesh(flat, new THREE.MeshStandardMaterial({ color, roughness: 0.75, side: THREE.DoubleSide, clippingPlanes: clipping })));
+    group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 28), new THREE.LineBasicMaterial({ color: 0x4d5a55, transparent: true, opacity: 0.55, clippingPlanes: clipping })));
+    return group;
+  };
+
+  const baseGroup = printedMesh(window.ENCLOSURE_MESH.parts.base, 0xe4e8e4);
+  const lidGroup = printedMesh(window.ENCLOSURE_MESH.parts.lid, 0xcfd6d3);
+  lidGroup.position.y = LID_LIFT;
+  scene.add(baseGroup, lidGroup);
+
+  const partGroup = new THREE.Group();
+  const anchors = [];
+  const { components, board_details: boardDetails, connectors } = window.ENCLOSURE_MESH;
+  // The board is drawn from its details; its collision envelopes would hide the USB and the LED.
+  const { xiao: boardEnvelope, xiao_usb: usbEnvelope, ...plainParts } = components;
+  Object.entries({ ...plainParts, ...boardDetails, ...connectors }).forEach(([name, [x0, x1, y0, y1, z0, z1]]) => {
+    const style = PART_STYLE[name];
+    const material = style.glow
+      ? new THREE.MeshBasicMaterial({ color: style.color, clippingPlanes: clipping })
+      : new THREE.MeshStandardMaterial({ color: style.color, roughness: 0.6, clippingPlanes: clipping });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, z1 - z0, y1 - y0), material);
+    mesh.position.copy(toWorld((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2));
+    partGroup.add(mesh);
+    if (style.label) anchors.push({ text: style.label, at: mesh.position.clone().add(new THREE.Vector3(0, (z1 - z0) / 2 + (style.lift || 1), 0)) });
+  });
+  scene.add(partGroup);
+
+  // Wires are drawn along the same paths the collision tests check.
+  const wireGroup = new THREE.Group();
+  const yAxis = new THREE.Vector3(0, 1, 0);
+  window.ENCLOSURE_MESH.wires.forEach(wire => {
+    const material = new THREE.MeshStandardMaterial({ color: wire.color, roughness: 0.55, clippingPlanes: clipping });
+    const points = wire.points.map(p => toWorld(p[0], p[1], p[2]));
+    points.slice(1).forEach((end, i) => {
+      const start = points[i];
+      const along = end.clone().sub(start);
+      const segment = new THREE.Mesh(new THREE.CylinderGeometry(wire.radius, wire.radius, along.length(), 10), material);
+      segment.position.copy(start).addScaledVector(along, 0.5);
+      segment.quaternion.setFromUnitVectors(yAxis, along.clone().normalize());
+      wireGroup.add(segment);
+      if (i > 0) {
+        const corner = new THREE.Mesh(new THREE.SphereGeometry(wire.radius, 10, 8), material);
+        corner.position.copy(start);
+        wireGroup.add(corner);
+      }
+    });
+  });
+  scene.add(wireGroup);
+
+  // Foam tape and heat shrink in place; colors are for reading the model, not the real materials.
+  const aidGroup = new THREE.Group();
+  const tapeMaterial = new THREE.MeshBasicMaterial({ color: 0xe0218a, clippingPlanes: clipping });
+  const sleeveMaterial = new THREE.MeshBasicMaterial({ color: 0x18c6c6, clippingPlanes: clipping });
+  Object.entries(window.ENCLOSURE_MESH.assembly_aids).forEach(([name, [x0, x1, y0, y1, z0, z1]]) => {
+    const material = name.startsWith('sleeve') ? sleeveMaterial : tapeMaterial;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, z1 - z0, y1 - y0), material);
+    mesh.position.copy(toWorld((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2));
+    aidGroup.add(mesh);
+  });
+  scene.add(aidGroup);
+  const aidCenter = name => {
+    const [x0, x1, y0, y1, z0, z1] = window.ENCLOSURE_MESH.assembly_aids[name];
+    return toWorld((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+  };
+  anchors.push({ text: 'Стрічка на рамці', aid: true, at: aidCenter('tape_frame_divider') });
+  anchors.push({ text: 'Стрічка на притискачі', aid: true, at: aidCenter('tape_lid_left') });
+  anchors.push({ text: 'Стрічка на отворі', aid: true, at: aidCenter('foam_passage') });
+  anchors.push({ text: 'Термоусадка SDA, SCL', aid: true, at: aidCenter('sleeve_sda') });
+  anchors.push({ text: 'Термоусадка 3V3, GND', aid: true, at: aidCenter('sleeve_gnd') });
+
+  anchors.push({ text: 'Роз’єм Type-C', outside: true, at: toWorld((usbEnvelope[0] + usbEnvelope[1]) / 2, OUTER.y + 4, (usbEnvelope[4] + usbEnvelope[5]) / 2) });
+  anchors.push({ text: 'Вікна для світла й кнопок', onLid: true, at: toWorld((boardEnvelope[0] + boardEnvelope[1]) / 2, boardEnvelope[3] - 14, OUTER.z + 2) });
+
+  const labels = anchors.map(anchor => {
+    const el = document.createElement('div');
+    el.className = 'label';
+    el.textContent = anchor.text;
+    stage.appendChild(el);
+    return { el, at: anchor.at, onLid: anchor.onLid, outside: anchor.outside, aid: anchor.aid };
+  });
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  controls.minDistance = 50;
+  controls.maxDistance = 480;
+  const views = {
+    vIso: [85, 110, 150],
+    vIsoBack: [85, 95, -130],
+    vFront: [0, 6, 165],
+    vRight: [165, 6, 0],
+    vBack: [0, 6, -165],
+    vTop: [0, 170, 0.01],
+  };
+  const setView = id => {
+    camera.position.set(...views[id]);
+    controls.target.set(0, id === 'vIso' || id === 'vIsoBack' ? 12 : 0, 0);
+    controls.update();
+  };
+  Object.keys(views).forEach(id => document.getElementById(id).addEventListener('click', () => setView(id)));
+  setView('vIso');
+
+  const toggle = (id, apply) => {
+    const button = document.getElementById(id);
+    button.addEventListener('click', () => {
+      const on = button.getAttribute('aria-pressed') !== 'true';
+      button.setAttribute('aria-pressed', String(on));
+      apply(on);
+    });
+  };
+  let showLabels = true;
+  toggle('tLidShow', on => { lidGroup.visible = on; });
+  toggle('tLid', closed => { lidGroup.position.y = closed ? 0 : LID_LIFT; });
+  toggle('tBase', on => { baseGroup.visible = on; });
+  toggle('tParts', on => { partGroup.visible = on; });
+  toggle('tWires', on => { wireGroup.visible = on; });
+  toggle('tAids', on => { aidGroup.visible = on; });
+  toggle('tLabels', on => { showLabels = on; });
+
+  // Each section keeps the part of the model below or behind the cut, so the inside faces the camera.
+  const CUTS = {
+    cutNone: null,
+    cutZ: { size: OUTER.z, start: 18, normal: [0, -1, 0], offset: pos => pos - OUTER.z / 2, view: 'vTop' },
+    cutY: { size: OUTER.y, start: 8, normal: [0, 0, 1], offset: pos => OUTER.y / 2 - pos, view: 'vFront' },
+    cutX: { size: OUTER.x, start: 72, normal: [-1, 0, 0], offset: pos => pos - OUTER.x / 2, view: 'vRight' },
+  };
+  const slider = document.getElementById('cutPos');
+  const out = document.getElementById('cutOut');
+  let activeCut = null;
+  const applyCut = () => {
+    if (!activeCut) {
+      clipPlane.set(new THREE.Vector3(0, -1, 0), 1000);
+      out.textContent = '';
+      return;
+    }
+    const pos = Number(slider.value);
+    clipPlane.normal.set(...activeCut.normal);
+    clipPlane.constant = activeCut.offset(pos);
+    out.textContent = pos.toFixed(1).replace('.', ',') + ' мм';
+  };
+  Object.keys(CUTS).forEach(id => document.getElementById(id).addEventListener('click', () => {
+    Object.keys(CUTS).forEach(other => document.getElementById(other).setAttribute('aria-pressed', String(other === id)));
+    activeCut = CUTS[id];
+    slider.disabled = !activeCut;
+    if (activeCut) {
+      slider.max = activeCut.size;
+      slider.value = activeCut.start;
+      setView(activeCut.view);
+    }
+    applyCut();
+  }));
+  slider.addEventListener('input', applyCut);
+
+  const resize = () => {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+  new ResizeObserver(resize).observe(stage);
+  resize();
+
+  const place = item => {
+    const world = item.at.clone();
+    if (item.onLid) world.y += lidGroup.position.y;
+    const p = world.project(camera);
+    const owner = item.onLid ? lidGroup : item.aid ? aidGroup : partGroup;
+    // Under a closed lid the labels of inner parts would only cover the windows.
+    const covered = !item.onLid && !item.outside && lidGroup.visible && lidGroup.position.y === 0;
+    item.el.hidden = !showLabels || !owner.visible || covered || p.z > 1;
+    item.el.style.left = ((p.x + 1) / 2) * stage.clientWidth + 'px';
+    item.el.style.top = ((1 - p.y) / 2) * stage.clientHeight + 'px';
+  };
+  const tick = () => {
+    controls.update();
+    renderer.render(scene, camera);
+    labels.forEach(place);
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+try {
+  startScene();
+} catch (error) {
+  const stage = document.getElementById('stage');
+  stage.style.height = 'auto';
+  stage.insertAdjacentHTML('beforeend', '<p id="fallback">3D не запустилося в цьому браузері. Перевірки й розміри поруч лишаються правильними.</p>');
+}
+</script>
